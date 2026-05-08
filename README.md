@@ -289,4 +289,4 @@ Le check de fraîcheur des DAGs utilise `DagRun.start_date` (heure réelle d'ex�
 
 ---
 
-*Projet personnel — Jérôme | Stack : Python · Airflow · Oracle ADB · OCI · Streamlit*
+*Projet personnel — Moulinier Jérôme | Stack : Python · Airflow · Oracle ADB · OCI · Streamlit*
