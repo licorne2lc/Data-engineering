@@ -1,0 +1,186 @@
+# ─────────────────────────────────────────────
+# Architecture DataOZ — PC Local
+# Airflow 2.8.0 + PostgreSQL 15 (metadata Airflow)
+#                + Oracle Autonomous DB (données curated)
+# ─────────────────────────────────────────────
+
+x-airflow-common: &airflow-common
+  # Image custom (Python 3.11 + Playwright/Chromium)
+  # Construire avec : docker compose build
+  build: .
+  image: dataoz_airflow:2.8.0-python3.11
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Europe/Paris
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 30
+    # ── Racine finance ──
+    DATAOZ_FINANCE_ROOT: /opt/airflow/data/curated/finance
+    # ── Référentiel valeurs (dag_boursorama_valeurs) ──
+    DATAOZ_VALEURS_BASE: /opt/airflow/data/curated/finance/valeurs
+    DATAOZ_ETF_PATH: /opt/airflow/data/curated/finance/valeurs/ETF
+    # ── Cotations (dag_boursorama_cotation) ──
+    DATAOZ_COTATION_BASE: /opt/airflow/data/curated/finance/cotations
+    DATAOZ_COTATION_RAW: /opt/airflow/data/raw/finance/cotations
+    # ── News (dag_boursorama_news) ──
+    DATAOZ_NEWS_ROOT: /opt/airflow/data/curated/finance/news
+    DATAOZ_NEWS_RAW: /opt/airflow/data/raw/finance
+    # ── Météo Bresser ──
+    BRESSER_DATA_DIR: /opt/airflow/data/curated/météo/bresser
+    # ── Weathercloud (credentials depuis .env) ──
+    WEATHERCLOUD_EMAIL:      ${weathercloud_email}
+    WEATHERCLOUD_PASSWORD:   ${weathercloud_password}
+    WEATHERCLOUD_STATION_ID: ${weathercloud_station_id}
+    WEATHERCLOUD_KEY:        ${weathercloud_key}
+    WEATHERCLOUD_ID:         ${weathercloud_id}
+    # ── Tuya / SmartLife (dag_conso_elec_tuya) ──
+    TUYA_API_ID:             ${TUYA_API_ID}
+    TUYA_API_SECRET:         ${TUYA_API_SECRET}
+    TUYA_API_REGION:         ${TUYA_API_REGION}
+    TUYA_HISTORIQUE_DEBUT:   ${TUYA_HISTORIQUE_DEBUT}
+    TUYA_DOSSIER_EXPORT:     /opt/airflow/data/raw/conso_elec/Tuya
+    # ── Enedis Data Hub (dag_conso_elec_enedis) ──
+    ENEDIS_API_KEY:          ${ENEDIS_API_KEY}
+    ENEDIS_SECRET_KEY:       ${ENEDIS_SECRET_KEY}
+    ENEDIS_ENV:              ${ENEDIS_ENV:-sandbox}
+    PRM_ID:                  ${PRM_ID}
+    ENEDIS_TOKEN_CACHE:      /opt/airflow/data/raw/conso_elec/enedis/_tokens/token.json
+
+    # ── Enedis SCRAPPING (Playwright) ──
+    ENEDIS_IDENTIFIANT:      ${ENEDIS_IDENTIFIANT}
+    ENEDIS_PASSWORD:         ${ENEDIS_PASSWORD}
+
+    # ── DB interne PostgreSQL (synthèses Tuya granulaires) ──
+    CONSO_ELEC_DB_URL:       postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    TUYA_SYNTHESE_HORAIRE_JOURS: "30"
+    TUYA_SYNTHESE_15MIN_JOURS:   "7"
+
+    # ── Playwright ──
+    PLAYWRIGHT_BROWSERS_PATH: /home/airflow/.cache/ms-playwright
+
+    # ── Oracle Autonomous Database (données curated) ──────────────
+    ORACLE_PASSWORD:         ${ORACLE_PASSWORD}
+    WALLET_PASSWORD:         ${WALLET_PASSWORD}
+    ORACLE_WALLET_DIR:       /opt/airflow/wallet
+    ORACLE_DSN:              dataozdb_tp
+
+    # ── OCI Object Storage (dag_oracle_load → bucket dataoz-curated) ──
+    OCI_CONFIG_FILE:         /opt/airflow/oci_key/config
+    OCI_NAMESPACE:           axdo67cv3ayo
+    OCI_BUCKET:              dataoz-curated
+  volumes:
+    - D:/projet_dataoz/pc_data/airflow/dags:/opt/airflow/dags
+    - D:/projet_dataoz/pc_data/airflow/logs:/opt/airflow/logs
+    - D:/projet_dataoz/pc_data/airflow/plugins:/opt/airflow/plugins
+    - D:/projet_dataoz/pc_data/data:/opt/airflow/data
+    
+    # ── Scripts Python ──
+    - D:/projet_dataoz/pc_data/scripts:/opt/airflow/scripts
+
+    # ── Wallet Oracle Autonomous Database ────────────────────────
+    - D:/projet_dataoz/pc_data/wallet_oracle:/opt/airflow/wallet:ro
+
+    # ── OCI API Key (upload Object Storage) ──────────────────────
+    - D:/projet_dataoz/pc_data/oci_key:/opt/airflow/oci_key:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+
+  # ── Base de données metadata Airflow (reste PostgreSQL) ──────────
+  postgres:
+    image: postgres:15
+    container_name: dataoz_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # ── Initialisation Airflow (une seule fois) ──
+  airflow-init:
+    <<: *airflow-common
+    container_name: dataoz_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        pip install --no-cache-dir -r /opt/airflow/scripts/requirements.txt &&
+        airflow db migrate &&
+        airflow users create \
+          --username admin \
+          --firstname Jerome \
+          --lastname DataOZ \
+          --role Admin \
+          --email admin@dataoz.local \
+          --password ${AIRFLOW_ADMIN_PASSWORD}
+    restart: "no"
+
+  # ── Scheduler Airflow ────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: dataoz_airflow_scheduler
+    command: >
+      bash -c "pip install --no-cache-dir -r /opt/airflow/scripts/requirements.txt && airflow scheduler"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      retries: 5
+      start_period: 30s
+
+  # ── Interface Web Airflow ────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: dataoz_airflow_webserver
+    command: >
+      bash -c "pip install --no-cache-dir -r /opt/airflow/scripts/requirements.txt && airflow webserver"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      retries: 5
+      start_period: 30s
+
+  # ── Récepteur Bresser (serveur HTTP permanent) ──────────────────
+  bresser-receiver:
+    build:
+      context: .
+      dockerfile: Dockerfile.bresser
+    image: dataoz_bresser_receiver:latest
+    container_name: dataoz_bresser_receiver
+    environment:
+      BRESSER_DATA_DIR: /data/curated/météo/bresser
+      BRESSER_PORT: "8765"
+    volumes:
+      - D:/projet_dataoz/pc_data/data:/data
+      - D:/projet_dataoz/pc_data/scripts/meteo/bresser:/app
+    ports:
+      - "8765:8765"
+    working_dir: /app
+    command: python bresser_receiver.py
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8765/status"]
+      interval: 30s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: dataoz_postgres_data

@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────
+# .gitignore — Projet DataOZ
+# Préventif : à mettre en place AVANT tout `git init`
+# ─────────────────────────────────────────────
+
+# ── Secrets ──────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# ── Credentials OCI & Oracle Wallet ──────────
+oci_key/
+wallet_oracle/
+**/wallet/
+**/*.p12
+**/*.jks
+**/*.sso
+**/cwallet.sso
+**/ewallet.p12
+**/tnsnames.ora
+**/sqlnet.ora
+
+# ── Tokens OAuth & cache ─────────────────────
+**/data/raw/conso_elec/enedis/_tokens/
+**/data/raw/conso_elec/enedis/_tokens/*.json
+**/.cache/
+
+# ── Données perso (consommations, PRM) ───────
+# On exclut tous les contenus mais on conserve l'arborescence
+# via les fichiers .gitkeep
+**/data/raw/
+**/data/curated/
+**/data/tmp/
+!**/data/raw/.gitkeep
+!**/data/curated/.gitkeep
+!**/data/tmp/.gitkeep
+!**/data/raw/**/.gitkeep
+!**/data/curated/**/.gitkeep
+
+# ── Logs Airflow ─────────────────────────────
+**/airflow/logs/
+**/logs/
+
+# ── Volumes Docker / Postgres ────────────────
+postgres_data/
+
+# ── Python ───────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# ── Playwright (screenshots de debug) ────────
+**/data/tmp/enedis_scrap/debug_*.png
+**/data/tmp/weathercloud_dl/debug_*.png
+
+# ── IDE / OS ─────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
