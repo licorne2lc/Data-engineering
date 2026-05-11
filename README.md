@@ -7,15 +7,16 @@
 ## Table des matières
 
 1. [Vue d'ensemble](#vue-densemble)
-2. [Architecture](#architecture)
-3. [Sources de données](#sources-de-données)
-4. [Stack technique](#stack-technique)
-5. [Structure du pipeline](#structure-du-pipeline)
-6. [Composants principaux](#composants-principaux)
-7. [Monitoring intégral](#monitoring-intégral)
-8. [Déploiement](#déploiement)
-9. [Résultats](#résultats)
-10. [Points techniques notables](#points-techniques-notables)
+2. [Interface Streamlit — Explorateur SQL](#interface-streamlit--explorateur-sql)
+3. [Architecture](#architecture)
+4. [Sources de données](#sources-de-données)
+5. [Stack technique](#stack-technique)
+6. [Structure du pipeline](#structure-du-pipeline)
+7. [Composants principaux](#composants-principaux)
+8. [Monitoring intégral](#monitoring-intégral)
+9. [Déploiement](#déploiement)
+10. [Résultats](#résultats)
+11. [Points techniques notables](#points-techniques-notables)
 
 ---
 
@@ -30,6 +31,46 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 - Automatiser l'ensemble de la chaîne avec zéro intervention manuelle au quotidien
 - Exposer les données via une interface SQL interactive accessible depuis n'importe où
 - Valider l'intégrité de la chaîne complète avec un DAG de monitoring déclenché automatiquement
+
+---
+
+## Interface Streamlit — Explorateur SQL
+
+L'application est accessible publiquement sur **[https://sql-database.dataoz.fr](https://sql-database.dataoz.fr)**.
+
+Elle permet de requêter interactivement toutes les tables Oracle sans écrire de SQL : les requêtes sont générées automatiquement à partir des sélections de l'utilisateur.
+
+### Fonctionnement
+
+**① Choisir une source** — sélection par étiquettes (`st.pills`) : Météo Bresser, ENEDIS, Tuya, Finance cotations.
+
+**① bis — Granularité** (selon la source) — 30 min / Horaire / Journalier pour ENEDIS et Tuya.
+
+**② Mesures** — colonnes à inclure dans le SELECT (consommation, cours, température…).
+
+**③ Valeurs boursières** (Finance cotations uniquement) — filtre par secteur puis par valeur, avec compteur du nombre de titres sélectionnés.
+
+**② Période** — raccourcis prédéfinis (7 jours, 30 jours, YTD…) ou dates personnalisées via un calendrier intégré.
+
+La requête SQL Oracle est générée en temps réel et affichée avant exécution. Les résultats sont exportables en CSV via le bouton **Télécharger les données**.
+
+### Captures d'écran
+
+**Sélection ENEDIS — 30 min — requête générée**
+
+![ENEDIS 30min](docs/screenshots/streamlit_enedis_30min.png)
+
+**Finance cotations — filtrage par secteur et mesures**
+
+![Finance cotations sélection](docs/screenshots/streamlit_finance_selection.png)
+
+**Finance cotations — résultats (AXA, GL Events, IPSOS, JCDecaux, Publicis)**
+
+![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
+
+**Sélecteur de période — calendrier intégré**
+
+![Sélecteur de dates](docs/screenshots/streamlit_calendrier.png)
 
 ---
 
@@ -259,46 +300,6 @@ check_smtp            ──┘                                  (licorne2lc@msn
 En cas d'anomalie détectée, `pipeline_summary` envoie automatiquement un email HTML récapitulatif à `licorne2lc@msn.com` depuis `licorne2lc@gmail.com` (authentification via mot de passe d'application Google).
 
 Le DAG `dag_test_email` (déclenchement manuel) permet de valider la configuration SMTP à tout moment : il enchaîne un test de connexion puis l'envoi d'un vrai email de confirmation.
-
----
-
-## Interface Streamlit — Explorateur SQL
-
-L'application est accessible publiquement sur **[https://sql-database.dataoz.fr](https://sql-database.dataoz.fr)**.
-
-Elle permet de requêter interactivement toutes les tables Oracle sans écrire de SQL : les requêtes sont générées automatiquement à partir des sélections de l'utilisateur.
-
-### Fonctionnement
-
-**① Choisir une source** — sélection par étiquettes (`st.pills`) : Météo Bresser, ENEDIS, Tuya, Finance cotations.
-
-**① bis — Granularité** (selon la source) — 30 min / Horaire / Journalier pour ENEDIS et Tuya.
-
-**② Mesures** — colonnes à inclure dans le SELECT (consommation, cours, température…).
-
-**③ Valeurs boursières** (Finance cotations uniquement) — filtre par secteur puis par valeur, avec compteur du nombre de titres sélectionnés.
-
-**② Période** — raccourcis prédéfinis (7 jours, 30 jours, YTD…) ou dates personnalisées via un calendrier intégré.
-
-La requête SQL Oracle est générée en temps réel et affichée avant exécution. Les résultats sont exportables en CSV via le bouton **Télécharger les données**.
-
-### Captures d'écran
-
-**Sélection ENEDIS — 30 min — requête générée**
-
-![ENEDIS 30min](docs/screenshots/streamlit_enedis_30min.png)
-
-**Finance cotations — filtrage par secteur et mesures**
-
-![Finance cotations sélection](docs/screenshots/streamlit_finance_selection.png)
-
-**Finance cotations — résultats (AXA, GL Events, IPSOS, JCDecaux, Publicis)**
-
-![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
-
-**Sélecteur de période — calendrier intégré**
-
-![Sélecteur de dates](docs/screenshots/streamlit_calendrier.png)
 
 ---
 
