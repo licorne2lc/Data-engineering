@@ -40,41 +40,33 @@ L'application est accessible publiquement sur **[https://sql-database.dataoz.fr]
 
 Elle permet de requêter interactivement toutes les tables Oracle sans écrire de SQL : les requêtes sont générées automatiquement à partir des sélections de l'utilisateur.
 
-### Fonctionnement
+### Démarche en 4 étapes
 
-**① Choisir une source** — sélection par étiquettes (`st.pills`) : Météo Bresser, ENEDIS, Tuya, Finance cotations.
+**Étape 1 — Sélection de la source de données**
 
-**① bis — Granularité** (selon la source) — 30 min / Horaire / Journalier pour ENEDIS et Tuya.
+Choisir la source via des étiquettes cliquables (`st.pills`) : Météo Bresser, ENEDIS, Tuya, Finance cotations. Pour ENEDIS et Tuya, une granularité est ensuite sélectionnée (30 min / Horaire / Journalier).
 
-**② Mesures** — colonnes à inclure dans le SELECT (consommation, cours, température…).
+![Sélection source ENEDIS](docs/screenshots/streamlit_enedis_30min.png)
 
-**③ Valeurs boursières** (Finance cotations uniquement) — filtre par secteur puis par valeur, avec compteur du nombre de titres sélectionnés.
+**Étape 2 — Sélection des données**
 
-**② Période** — raccourcis prédéfinis (7 jours, 30 jours, YTD…) ou dates personnalisées via un calendrier intégré.
+Choisir les mesures à inclure dans la requête (colonnes du SELECT). Pour Finance cotations, un filtre par secteur permet de cibler les valeurs boursières souhaitées, avec un compteur du nombre de titres sélectionnés.
 
-La requête SQL Oracle est générée en temps réel et affichée avant exécution. Les résultats sont exportables en CSV via le bouton **Télécharger les données**.
+![Sélection mesures et filtres Finance](docs/screenshots/streamlit_finance_selection.png)
 
-### Captures d'écran
+**Étape 3 — Sélection de la période**
 
-**Sélection ENEDIS — 30 min — requête générée**
+Définir la plage temporelle via des raccourcis prédéfinis (7 jours, 30 jours, YTD…) ou un calendrier intégré pour des dates personnalisées.
 
-![ENEDIS 30min](docs/screenshots/streamlit_enedis_30min.png)
+![Sélecteur de période — date début](docs/screenshots/streamlit_calendrier.png)
 
-**Finance cotations — filtrage par secteur et mesures**
+![Sélecteur de période — date fin](docs/screenshots/streamlit_calendrier%202.png)
 
-![Finance cotations sélection](docs/screenshots/streamlit_finance_selection.png)
+**Étape 4 — Exécution de la requête SQL**
 
-**Sélecteur de période — calendrier intégré (date début)**
+La requête Oracle est générée automatiquement et affichée avant exécution. Les résultats s'affichent dans un tableau exportable en CSV.
 
-![Sélecteur de dates début](docs/screenshots/streamlit_calendrier.png)
-
-**Sélecteur de période — calendrier intégré (date fin)**
-
-![Sélecteur de dates fin](docs/screenshots/streamlit_calendrier%202.png)
-
-**Finance cotations — résultats (AXA, GL Events, IPSOS, JCDecaux, Publicis)**
-
-![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
+![Résultats Finance cotations](docs/screenshots/streamlit_finance_resultats.png)
 
 ---
 
