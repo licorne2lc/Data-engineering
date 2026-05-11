@@ -68,9 +68,13 @@ La requête SQL Oracle est générée en temps réel et affichée avant exécuti
 
 ![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
 
-**Sélecteur de période — calendrier intégré**
+**Sélecteur de période — calendrier intégré (date début)**
 
-![Sélecteur de dates](docs/screenshots/streamlit_calendrier.png)
+![Sélecteur de dates début](docs/screenshots/streamlit_calendrier.png)
+
+**Sélecteur de période — calendrier intégré (date fin)**
+
+![Sélecteur de dates fin](docs/screenshots/streamlit_calendrier%202.png)
 
 ---
 
