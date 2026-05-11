@@ -72,6 +72,18 @@ x-airflow-common: &airflow-common
     OCI_CONFIG_FILE:         /opt/airflow/oci_key/config
     OCI_NAMESPACE:           axdo67cv3ayo
     OCI_BUCKET:              dataoz-curated
+
+    # ── SMTP — Alertes email dag_check_pipeline ──────────────────────
+    # Compte expéditeur : licorne2lc@msn.com (Outlook/MSN)
+    # Prérequis : activer "Authentification SMTP" dans les paramètres Outlook
+    # https://account.live.com/proofs/manage → Sécurité → Options avancées
+    AIRFLOW__SMTP__SMTP_HOST:      smtp.gmail.com
+    AIRFLOW__SMTP__SMTP_PORT:      "587"
+    AIRFLOW__SMTP__SMTP_STARTTLS:  "true"
+    AIRFLOW__SMTP__SMTP_SSL:       "false"
+    AIRFLOW__SMTP__SMTP_USER:      ${SMTP_USER}
+    AIRFLOW__SMTP__SMTP_PASSWORD:  ${SMTP_PASSWORD}
+    AIRFLOW__SMTP__SMTP_MAIL_FROM: ${SMTP_USER}
   volumes:
     - D:/projet_dataoz/pc_data/airflow/dags:/opt/airflow/dags
     - D:/projet_dataoz/pc_data/airflow/logs:/opt/airflow/logs
@@ -160,27 +172,4 @@ services:
   # ── Récepteur Bresser (serveur HTTP permanent) ──────────────────
   bresser-receiver:
     build:
-      context: .
-      dockerfile: Dockerfile.bresser
-    image: dataoz_bresser_receiver:latest
-    container_name: dataoz_bresser_receiver
-    environment:
-      BRESSER_DATA_DIR: /data/curated/météo/bresser
-      BRESSER_PORT: "8765"
-    volumes:
-      - D:/projet_dataoz/pc_data/data:/data
-      - D:/projet_dataoz/pc_data/scripts/meteo/bresser:/app
-    ports:
-      - "8765:8765"
-    working_dir: /app
-    command: python bresser_receiver.py
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8765/status"]
-      interval: 30s
-      retries: 3
-      start_period: 10s
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-    name: dataoz_postgres_data
+      contex

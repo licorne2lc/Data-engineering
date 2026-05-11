@@ -15,6 +15,7 @@
 7. [Monitoring intégral](#monitoring-intégral)
 8. [Déploiement](#déploiement)
 9. [Résultats](#résultats)
+10. [Points techniques notables](#points-techniques-notables)
 
 ---
 
@@ -28,7 +29,7 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 - Centraliser dans une base de données cloud des données fragmentées (capteurs, fichiers, sites web)
 - Automatiser l'ensemble de la chaîne avec zéro intervention manuelle au quotidien
 - Exposer les données via une interface SQL interactive accessible depuis n'importe où
-- Valider l'intégrité de la chaîne complète avec un DAG de monitoring dédié
+- Valider l'intégrité de la chaîne complète avec un DAG de monitoring déclenché automatiquement
 
 ---
 
@@ -46,8 +47,12 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 │  Boursorama ─────► dag_boursorama_*   ──► finance/cotations/                │
 │  API gouv.fr ────► dag_calendaire     ──► calendaire/                       │
 │                                                                             │
-│                    dag_oracle_load ──────► Upload vers OCI bucket           │
-└──────────────────────────────────────┬──────────────────────────────────────┘
+│  dag_oracle_load ────────────────────────► Upload vers OCI bucket           │
+│       │                                                                     │
+│       └─► TriggerDagRunOperator ─────────► dag_check_pipeline ◄─────────┐  │
+│  (idem pour chaque DAG collecte)                  ▲                      │  │
+│                                             cron 09:00 UTC (filet)       │  │
+└──────────────────────────────────────┬───────────────────────────────────┘  │
                                        │ HTTPS (OCI SDK)
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
 │  ORACLE CLOUD INFRASTRUCTURE (Always Free Tier)                             │
@@ -57,10 +62,11 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 │        │  DBMS_SCHEDULER COPY_DATA (07h30 UTC)                              │
 │        ▼                                                                    │
 │  Oracle Autonomous Database (dataozdb)                                      │
-│  ┌─────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐   │
-│  │ METEO_BRESSER│ │ ENEDIS_30MIN │ │ TUYA_15MIN   │ │ FINANCE_COTATIONS │   │
-│  │ ENEDIS_JOUR │ │ TUYA_HORAIRE │ │ TUYA_JOUR    │ │ CALENDRIER       │   │
-│  └─────────────┘ └──────────────┘ └──────────────┘ └──────────────────┘   │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐  │
+│  │ METEO_BRESSER│ │ ENEDIS_30MIN │ │ TUYA_15MIN   │ │ FINANCE_COTATIONS │  │
+│  │ ENEDIS_JOUR  │ │ ENEDIS_HEURE │ │ TUYA_HORAIRE │ │ CALENDRIER       │  │
+│  │              │ │              │ │ TUYA_JOUR    │ │                  │  │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────┘  │
 │        │                                                                    │
 │        │  oracledb (Python, wallet mTLS)                                   │
 │        ▼                                                                    │
@@ -79,13 +85,14 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 - **API** : Tuya Cloud API (Beta), statistique `add_ele`
 - **Appareils** : prises connectées SmartLife mesurant la consommation par appareil
 - **Granularités** : 15 minutes, horaire, journalier, mensuel
-- **Collecte** : quotidienne à 02h00 (Paris), historique complet depuis l'origine
+- **Collecte** : quotidienne à 02h00 UTC, historique complet depuis l'origine
 
 ### Consommation électrique — Enedis
-- **Canal A** : scraping automatique via Playwright depuis l'espace client Enedis (courbe de charge J-5 → J-2)
-- **Canal B** : intégration manuelle de fichiers XLSX déposés dans un inbox
-- **Granularité** : 30 minutes + agrégat journalier
-- **Fusion** : les données manuelles ont priorité sur le scraping en cas de doublon
+- **Canal B** : intégration manuelle de fichiers XLSX déposés dans un inbox (`inbox_enedis/`) — priorité haute, les données manuelles écrasent le scraping en cas de doublon
+- **Canal C** : scraping automatique via Playwright depuis l'espace client Enedis (courbe de charge J-5 → J-2), déposé dans `inbox_enedis_scrap/`
+- **Granularités** : 30 minutes → agrégats horaire + journalier calculés automatiquement
+- **Fusion** : base unique `Database_Enedis_30_min.csv`, les deux canaux convergent avec audit des divergences
+- **Planification** : quotidien à 05h00 UTC — Canal B d'abord, Canal C enchaîné, agrégations en parallèle
 
 ### Météo — Station Bresser MeteoChamp HD
 - **Canal A** : export CSV mensuel depuis Weathercloud (Playwright, login automatique)
@@ -94,14 +101,14 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 - **Mapping** : catalogue JSON de correspondance des colonnes FR↔EN entre les deux canaux
 
 ### Finance — Boursorama
-- **Scraping** : cotations ETF et valeurs mobilières via Playwright (Chromium headless)
-- **Enrichissement** : données ISIN, historiques 5J et 10A
-- **Planification** : quotidien à 06h00 (Paris), jours ouvrés
+- **Collecte cotations** (`dag_boursorama_cotation`) : historiques 5J et 10A via Playwright (Chromium headless), quotidien à 06h00 UTC, jours ouvrés
+- **Référentiel valeurs** (`dag_boursorama_valeurs`) : enrichissement ISIN/secteur/éligibilité PEA des instruments, hebdomadaire (lundi 05h00), ne se met à jour que si de nouveaux instruments sont détectés
+- **Données chargées** : 473 000+ enregistrements OHLC dans `FINANCE_COTATIONS`
 
 ### Calendrier
 - **Sources** : API officielle data.gouv.fr (jours fériés, vacances scolaires zones A/B/C)
 - **Enrichissement** : indicateurs semaine paire/impaire, nom du jour, fuseau UTC
-- **Mise à jour** : mensuelle (9 496 lignes couvrant plusieurs années)
+- **Mise à jour** : mensuelle
 
 ---
 
@@ -116,7 +123,8 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 | Base de données | Oracle Autonomous Database 23ai (Always Free) |
 | ETL cloud | DBMS_SCHEDULER + DBMS_CLOUD.COPY_DATA |
 | Connectivité Oracle | python-oracledb (thin mode, wallet mTLS) |
-| Interface web | Streamlit, hébergé sur OCI Compute VM (Ubuntu 22.04) |
+| Interface web | Streamlit (sélection source/granularité en mode étiquettes `st.pills`) |
+| Hébergement Streamlit | OCI Compute VM (Ubuntu 22.04), HTTPS |
 | DNS / domaine | IONOS — `sql-database.dataoz.fr` |
 | Infrastructure as code | Docker Compose, scripts SQL de déploiement |
 
@@ -126,39 +134,51 @@ Le pipeline va de la collecte brute jusqu'à l'exploration interactive via une a
 
 ### Étape 1 — Collecte (PC local, Airflow)
 
-Chaque DAG de collecte s'exécute selon son propre schedule et produit un fichier CSV curated normalisé dans `data/curated/`.
+Chaque DAG de collecte s'exécute selon son propre schedule et produit un ou plusieurs fichiers CSV curated normalisés dans `data/curated/`.
 
 ```
 dag_meteo_station       → common_weather_database.csv
 dag_conso_elec_tuya     → _SYNTHESE_15MIN/HORAIRE/JOURNALIERE/MENSUELLE.csv
-dag_conso_elec_enedis   → Database_Enedis_30_min.csv + database_enedis_journalier.csv
-dag_boursorama_cotation → boursorama_cotations.csv
+dag_conso_elec_enedis   → Database_Enedis_30_min.csv
+                           database_enedis_horaire.csv
+                           database_enedis_journalier.csv
+dag_boursorama_cotation → boursorama_cotations.csv + ohlc_10a/ (par symbole)
 dag_calendaire          → socle_calendrier.csv
 ```
 
 ### Étape 2 — Upload bucket OCI
 
-`dag_oracle_load` (quotidien 06h00 UTC) upload les 9 fichiers CSV curated vers le bucket OCI `dataoz-curated` via l'OCI Python SDK (`oci.object_storage`).
+`dag_oracle_load` (quotidien 06h00 UTC) upload les 10 fichiers CSV curated vers le bucket OCI `dataoz-curated` via l'OCI Python SDK (`oci.object_storage`). À la fin de tous les uploads, un `TriggerDagRunOperator` déclenche `dag_check_pipeline`.
 
 ### Étape 3 — ETL Oracle (cloud, automatique)
 
-`DBMS_SCHEDULER` déclenche 9 jobs à 07h30 UTC. Chaque job appelle `DBMS_CLOUD.COPY_DATA` pour charger le fichier CSV depuis le bucket dans la table Oracle correspondante (TRUNCATE + reload).
+`DBMS_SCHEDULER` déclenche les jobs à 07h30 UTC. Chaque job appelle `DBMS_CLOUD.COPY_DATA` pour charger le fichier CSV depuis le bucket dans la table Oracle correspondante (TRUNCATE + reload).
+
+Pour `FINANCE_COTATIONS`, le chargement passe par une table de staging (`FINANCE_COTATIONS_STAGE`) car la colonne `open_price` du CSV Boursorama ne correspond pas à la colonne Oracle du même nom — le mapping explicite est réalisé dans un `INSERT SELECT` post-staging.
 
 ```sql
--- Exemple : chargement METEO_BRESSER
+-- Exemple : chargement FINANCE_COTATIONS via staging
 BEGIN
+  EXECUTE IMMEDIATE 'TRUNCATE TABLE FINANCE_COTATIONS_STAGE';
   DBMS_CLOUD.COPY_DATA(
-    table_name    => 'METEO_BRESSER',
+    table_name      => 'FINANCE_COTATIONS_STAGE',
     credential_name => 'OCI_CRED',
-    file_uri_list => 'https://objectstorage.eu-paris-1.oraclecloud.com/.../meteo_bresser.csv',
-    format        => JSON_OBJECT('delimiter' VALUE ',', 'skipheaders' VALUE '1', ...)
+    file_uri_list   => 'https://objectstorage...finance_cotations.csv',
+    format          => JSON_OBJECT('delimiter' VALUE ',', 'skipheaders' VALUE '1')
   );
+  EXECUTE IMMEDIATE 'TRUNCATE TABLE FINANCE_COTATIONS';
+  INSERT INTO FINANCE_COTATIONS (date_col, symbol, last, high, low, close_price, ...)
+    SELECT date_col, symbol, last, high, low, close_price, ...
+    FROM   FINANCE_COTATIONS_STAGE;
+  COMMIT;
 END;
 ```
 
 ### Étape 4 — Exploration SQL (Streamlit)
 
-Application Streamlit déployée sur une VM OCI Compute (Ubuntu 22.04), accessible via HTTPS sur `sql-database.dataoz.fr`. Connectée à Oracle ADB via `python-oracledb` en mode thin (wallet mTLS). Permet de requêter interactivement toutes les tables avec génération de SQL Oracle natif (`FETCH FIRST`, `TO_TIMESTAMP`, filtres dynamiques).
+Application Streamlit déployée sur une VM OCI Compute (Ubuntu 22.04), accessible via HTTPS sur `sql-database.dataoz.fr`. Connectée à Oracle ADB via `python-oracledb` en mode thin (wallet mTLS). Permet de requêter interactivement toutes les tables avec génération de SQL Oracle natif.
+
+L'interface de sélection de source et de granularité utilise des **étiquettes cliquables** (`st.pills`) plutôt que des menus déroulants, rendant toutes les options disponibles visibles simultanément.
 
 ---
 
@@ -166,51 +186,79 @@ Application Streamlit déployée sur une VM OCI Compute (Ubuntu 22.04), accessib
 
 ### DAGs Airflow
 
-| DAG | Schedule | Description |
-|-----|----------|-------------|
-| `dag_meteo_station` | Quotidien matin | Données station météo Bresser (2 canaux) |
-| `dag_conso_elec_tuya` | Quotidien 02h00 | Consommation Tuya SmartLife (4 granularités) |
-| `dag_conso_elec_enedis` | Quotidien | Courbe de charge Enedis (scraping + manuel) |
-| `dag_boursorama_cotation` | Quotidien 06h00 | Cotations ETF Boursorama |
-| `dag_calendaire` | Mensuel | Jours fériés et vacances scolaires |
-| `dag_oracle_load` | Quotidien 06h00 | Upload 9 CSV → bucket OCI |
-| `dag_check_pipeline` | Manuel | Monitoring intégral de toute la chaîne |
+| DAG | Schedule (UTC) | Description | Fin de DAG |
+|-----|---------------|-------------|------------|
+| `dag_conso_elec_tuya` | Quotidien 02h00 | Consommation Tuya SmartLife (4 granularités) | → trigger check |
+| `dag_calendaire` | Quotidien 04h30 | Jours fériés et vacances scolaires | — |
+| `dag_boursorama_valeurs` | Lundi 05h00 | Référentiel ISIN/secteur (si changement) | — |
+| `dag_conso_elec_enedis` | Quotidien 05h00 | Courbe de charge Enedis (Canal B + Canal C) | → trigger check |
+| `dag_meteo_station` | Quotidien 06h00 | Données station météo Bresser (2 canaux) | → trigger check |
+| `dag_oracle_load` | Quotidien 06h00 | Upload 10 CSV → bucket OCI | → trigger check |
+| `dag_boursorama_cotation` | Lun–Ven 06h00 | Cotations ETF Boursorama (5J + 10A) | → trigger check |
+| `dag_check_pipeline` | Cron 09h00 + triggers | Monitoring intégral de toute la chaîne (6 étapes) | — |
+| `dag_test_email` | Manuel uniquement | Test de connexion SMTP + envoi email de validation | — |
 
 ### Tables Oracle ADB
 
-| Table | Description | Granularité |
-|-------|-------------|-------------|
-| `METEO_BRESSER` | Données météo station personnelle | 30 min |
-| `ENEDIS_30MIN` | Consommation électrique réseau | 30 min |
-| `ENEDIS_JOURNALIER` | Agrégat journalier Enedis | Jour |
-| `TUYA_15MIN` | Consommation appareils connectés | 15 min |
-| `TUYA_HORAIRE` | Consommation appareils connectés | Heure |
-| `TUYA_JOURNALIER` | Consommation appareils connectés | Jour |
-| `TUYA_MENSUEL` | Consommation appareils connectés | Mois |
-| `CALENDRIER` | Référentiel calendaire enrichi | Jour |
-| `FINANCE_COTATIONS` | Cours ETF et valeurs mobilières | Séance |
+| Table | Description | Granularité | Lignes (approx.) |
+|-------|-------------|-------------|-----------------|
+| `METEO_BRESSER` | Données météo station personnelle | 30 min | 26 000+ |
+| `ENEDIS_30MIN` | Consommation électrique réseau | 30 min | 63 000+ |
+| `ENEDIS_HORAIRE` | Agrégat horaire Enedis | Heure | 20 000+ |
+| `ENEDIS_JOURNALIER` | Agrégat journalier Enedis | Jour | 1 000+ |
+| `TUYA_15MIN` | Consommation appareils connectés | 15 min | — |
+| `TUYA_HORAIRE` | Consommation appareils connectés | Heure | — |
+| `TUYA_JOURNALIER` | Consommation appareils connectés | Jour | — |
+| `TUYA_MENSUEL` | Consommation appareils connectés | Mois | — |
+| `CALENDRIER` | Référentiel calendaire enrichi | Jour | 9 500+ |
+| `FINANCE_COTATIONS` | Cours ETF et valeurs mobilières | Séance | 473 000+ |
 
 ---
 
 ## Monitoring intégral
 
-`dag_check_pipeline` est un DAG de supervision qui vérifie toute la chaîne en 5 étapes parallèles puis consolide le résultat :
+### Déclenchement automatique
+
+`dag_check_pipeline` est déclenché de deux façons complémentaires :
+
+1. **`TriggerDagRunOperator`** dans chaque DAG d'approvisionnement — le check démarre dès qu'un pipeline termine, qu'il soit planifié ou déclenché manuellement. Le paramètre `max_active_runs=1` sur `dag_check_pipeline` empêche les runs simultanés si plusieurs DAGs finissent en même temps.
+
+2. **Cron filet `0 9 * * *`** (09h00 UTC) — garantit un run quotidien complet après les jobs Oracle DBMS_SCHEDULER (07h30 UTC), même si aucun DAG n'a déclenché de trigger.
+
+```
+02h30 UTC  dag_conso_elec_tuya termine    ──► check (Tuya frais)
+05h30 UTC  dag_conso_elec_enedis termine  ──► check (Enedis frais)
+06h30 UTC  dag_meteo_station termine      ──► check (Météo fraîche)
+06h30 UTC  dag_oracle_load termine        ──► check (OCI uploadé)
+08h00 UTC  dag_boursorama_cotation termine──► check (Cotations fraîches, lun-ven)
+09h00 UTC  cron filet                     ──► check complet post-Oracle
+```
+
+### Étapes de vérification
 
 ```
 check_collection_dags ──┐
 check_csv_freshness   ──┤
 check_oci_bucket      ──┼──► pipeline_summary  🎉 PIPELINE 100% OPÉRATIONNEL
-check_oracle          ──┤
-check_streamlit       ──┘
+check_oracle          ──┤                              │
+check_streamlit       ──┤                              └─► alerte email si anomalie
+check_smtp            ──┘                                  (licorne2lc@msn.com)
 ```
 
 **Contrôles effectués :**
 
-- **Étape 1** — Dernier run de chaque DAG de collecte : état (success/failed) et ancienneté
-- **Étape 2** — Fraîcheur et taille de chaque fichier CSV curated local
-- **Étape 3** — Présence et ancienneté de chaque fichier dans le bucket OCI
-- **Étape 4** — Statut des 9 jobs `DBMS_SCHEDULER` + row counts + fraîcheur des données Oracle
+- **Étape 1** — Dernier run de chaque DAG de collecte : état (success/failed) et ancienneté maximale acceptable
+- **Étape 2** — Fraîcheur et taille de chaque fichier CSV curated local (10 fichiers, dont `database_enedis_horaire.csv`)
+- **Étape 3** — Présence de chaque fichier dans le bucket OCI (10 fichiers attendus)
+- **Étape 4** — Statut des jobs `DBMS_SCHEDULER` + row counts minimum + fraîcheur des données Oracle (10 tables)
 - **Étape 5** — Accessibilité HTTP du Streamlit (timeout < 15 s, HTTP 200)
+- **Étape 6** — Connexion SMTP (connect + login Gmail, sans envoi) — garantit que les alertes peuvent partir
+
+### Alertes email
+
+En cas d'anomalie détectée, `pipeline_summary` envoie automatiquement un email HTML récapitulatif à `licorne2lc@msn.com` depuis `licorne2lc@gmail.com` (authentification via mot de passe d'application Google).
+
+Le DAG `dag_test_email` (déclenchement manuel) permet de valider la configuration SMTP à tout moment : il enchaîne un test de connexion puis l'envoi d'un vrai email de confirmation.
 
 ---
 
@@ -249,6 +297,10 @@ WEATHERCLOUD_EMAIL=...
 WEATHERCLOUD_PASSWORD=...
 TUYA_ACCESS_ID=...
 TUYA_ACCESS_SECRET=...
+
+# SMTP — Alertes email (mot de passe d'application Google)
+SMTP_USER=...@gmail.com
+SMTP_PASSWORD=...   # mot de passe d'application Google (2FA requis)
 ```
 
 ### Déploiement VM Streamlit (OCI Compute)
@@ -257,8 +309,15 @@ TUYA_ACCESS_SECRET=...
 # Copie de l'application
 scp -i ssh-key.key -O streamlit_app.py ubuntu@<IP>:/opt/dataoz/
 
-# Service systemd
+# Redémarrage du service systemd
 sudo systemctl restart dataoz-streamlit
+```
+
+### Redémarrage Airflow après modification de DAG
+
+```powershell
+# Appliquer les changements de DAGs (supprimer le cache .pyc si nécessaire)
+docker restart dataoz_airflow_scheduler
 ```
 
 ---
@@ -266,26 +325,36 @@ sudo systemctl restart dataoz-streamlit
 ## Résultats
 
 - **Pipeline entièrement automatisé** : zéro intervention manuelle au quotidien
-- **9 tables Oracle** alimentées chaque matin à 07h30 UTC
-- **26 750+ enregistrements météo**, 63 000+ mesures Enedis 30 min, 671+ mesures Tuya 15 min
-- **Streamlit accessible publiquement** sur `https://sql-database.dataoz.fr` avec requêtes SQL Oracle interactives
-- **Monitoring end-to-end** : `dag_check_pipeline` valide les 5 étapes en < 3 secondes
+- **10 tables Oracle** alimentées chaque matin à 07h30 UTC
+- **63 000+ mesures Enedis 30 min**, 473 000+ enregistrements de cotations financières, 26 000+ enregistrements météo
+- **Streamlit accessible publiquement** sur `https://sql-database.dataoz.fr` avec sélection de source et granularité en étiquettes
+- **Monitoring automatique** : `dag_check_pipeline` déclenché à chaque fin de DAG d'approvisionnement, valide les 6 étapes en < 5 secondes
+- **Alertes email** : notification HTML automatique vers `licorne2lc@msn.com` si anomalie détectée, SMTP validé par `dag_test_email`
 
 ---
 
 ## Points techniques notables
 
+**Enedis dual-canal avec priorité et agrégations automatiques**
+Le pipeline Enedis repose sur deux canaux convergent vers une base unique (`Database_Enedis_30_min.csv`) : le Canal B (XLSX manuels) a priorité sur le Canal C (scraping Playwright). Le graphe Airflow enchaîne Canal B → Canal C → agrégations journalière et horaire en parallèle. Les trois granularités (30 min, horaire, journalier) sont cohérentes : chaque créneau horaire = somme des 2 tranches 30 min.
+
+**FINANCE_COTATIONS — staging table pour contournement DBMS_CLOUD**
+`DBMS_CLOUD.COPY_DATA` ne supporte pas le paramètre `column_list` pour remapper des colonnes CSV vers des colonnes Oracle de noms différents. La solution adoptée : une table de staging `FINANCE_COTATIONS_STAGE` avec le schéma exact du CSV (16 colonnes), chargée par `COPY_DATA`, puis un `INSERT SELECT` explicite vers `FINANCE_COTATIONS` (18 colonnes) avec mapping des colonnes et valeurs NULL pour les colonnes absentes du CSV (`RISK_LEVEL`, `ELIGIBILITY`, `ELIG_PEA`).
+
+**Monitoring déclenché par TriggerDagRunOperator**
+Chaque DAG d'approvisionnement comporte une tâche finale `trigger_check_pipeline` (`TriggerDagRunOperator`, `wait_for_completion=False`, `trigger_rule="all_done"`). Le `dag_check_pipeline` est protégé par `max_active_runs=1` pour éviter les runs simultanés quand plusieurs DAGs finissent en même temps. Un cron filet à 09h00 UTC couvre le cas où les jobs Oracle DBMS_SCHEDULER (07h30) terminent après le dernier trigger.
+
+**Boursorama — référentiel vs données de marché**
+L'enriched CSV (`boursorama_cotations_enriched.csv`) est un référentiel d'instruments (ISIN, secteur, éligibilité) géré par `dag_boursorama_valeurs`. Il ne se met à jour que lorsque de nouveaux instruments sont ajoutés aux dossiers source (ETF/, premiere/, specifique/) — détection par hash de manifeste. Il peut donc rester stable plusieurs mois : c'est intentionnel, pas une panne.
+
 **Gestion du format Oracle VARCHAR2 pour les timestamps**
-DBMS_CLOUD.COPY_DATA convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière robuste, indépendamment des fractions de secondes éventuelles.
+`DBMS_CLOUD.COPY_DATA` convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière robuste.
 
 **Dual-channel météo avec catalogue de mapping**
 Les deux sources (Weathercloud et clé USB) produisent des formats de colonnes différents. Un `catalog.json` centralise la correspondance FR↔EN et normalise les données vers un schéma commun (`common_weather_database`).
 
-**ETL Enedis multi-canal avec audit de divergences**
-Le canal scraping et le canal manuel peuvent produire des valeurs contradictoires sur un même créneau horaire. Le système conserve un audit des divergences et applique une règle de priorité configurable (le manuel écrase le scraping par défaut).
-
 **Airflow `start_date` vs `execution_date`**
-Le check de fraîcheur des DAGs utilise `DagRun.start_date` (heure réelle d'exécution) et non `execution_date` (date logique de l'intervalle de données, toujours en retard d'une période).
+Le check de fraîcheur des DAGs utilise `DagRun.start_date` (heure réelle d'exécution) et non `execution_date` (date logique de l'intervalle, toujours en retard d'une période).
 
 ---
 
