@@ -64,10 +64,6 @@ La requête SQL Oracle est générée en temps réel et affichée avant exécuti
 
 ![Finance cotations sélection](docs/screenshots/streamlit_finance_selection.png)
 
-**Finance cotations — résultats (AXA, GL Events, IPSOS, JCDecaux, Publicis)**
-
-![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
-
 **Sélecteur de période — calendrier intégré (date début)**
 
 ![Sélecteur de dates début](docs/screenshots/streamlit_calendrier.png)
@@ -75,6 +71,10 @@ La requête SQL Oracle est générée en temps réel et affichée avant exécuti
 **Sélecteur de période — calendrier intégré (date fin)**
 
 ![Sélecteur de dates fin](docs/screenshots/streamlit_calendrier%202.png)
+
+**Finance cotations — résultats (AXA, GL Events, IPSOS, JCDecaux, Publicis)**
+
+![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
 
 ---
 
