@@ -262,6 +262,46 @@ Le DAG `dag_test_email` (déclenchement manuel) permet de valider la configurati
 
 ---
 
+## Interface Streamlit — Explorateur SQL
+
+L'application est accessible publiquement sur **[https://sql-database.dataoz.fr](https://sql-database.dataoz.fr)**.
+
+Elle permet de requêter interactivement toutes les tables Oracle sans écrire de SQL : les requêtes sont générées automatiquement à partir des sélections de l'utilisateur.
+
+### Fonctionnement
+
+**① Choisir une source** — sélection par étiquettes (`st.pills`) : Météo Bresser, ENEDIS, Tuya, Finance cotations.
+
+**① bis — Granularité** (selon la source) — 30 min / Horaire / Journalier pour ENEDIS et Tuya.
+
+**② Mesures** — colonnes à inclure dans le SELECT (consommation, cours, température…).
+
+**③ Valeurs boursières** (Finance cotations uniquement) — filtre par secteur puis par valeur, avec compteur du nombre de titres sélectionnés.
+
+**② Période** — raccourcis prédéfinis (7 jours, 30 jours, YTD…) ou dates personnalisées via un calendrier intégré.
+
+La requête SQL Oracle est générée en temps réel et affichée avant exécution. Les résultats sont exportables en CSV via le bouton **Télécharger les données**.
+
+### Captures d'écran
+
+**Sélection ENEDIS — 30 min — requête générée**
+
+![ENEDIS 30min](docs/screenshots/streamlit_enedis_30min.png)
+
+**Finance cotations — filtrage par secteur et mesures**
+
+![Finance cotations sélection](docs/screenshots/streamlit_finance_selection.png)
+
+**Finance cotations — résultats (AXA, GL Events, IPSOS, JCDecaux, Publicis)**
+
+![Finance cotations résultats](docs/screenshots/streamlit_finance_resultats.png)
+
+**Sélecteur de période — calendrier intégré**
+
+![Sélecteur de dates](docs/screenshots/streamlit_calendrier.png)
+
+---
+
 ## Déploiement
 
 ### Prérequis locaux
