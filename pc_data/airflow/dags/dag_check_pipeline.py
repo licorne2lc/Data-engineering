@@ -381,7 +381,7 @@ def check_smtp(**kwargs):
             ctx = ssl.create_default_context()
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
                 server.ehlo()
-                server.starttls(ctx)
+                server.starttls(context=ctx)
                 server.ehlo()
                 server.login(SMTP_USER, SMTP_PASSWORD)
             _ok(f"SMTP {SMTP_HOST}:{SMTP_PORT} → connexion et auth OK ({SMTP_USER})")
