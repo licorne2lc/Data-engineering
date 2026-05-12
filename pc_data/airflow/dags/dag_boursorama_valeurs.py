@@ -118,7 +118,7 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     # Lundi à 05h00 → avant dag_boursorama_cotation (06h00) et dag_boursorama_news (07h00)
     # Changer en "0 5 * * *" si on veut vérifier chaque jour (arrêt rapide si rien n'a changé)
-    schedule_interval="0 5 * * 1",
+    schedule_interval="35 1 * * 1",  # Lundi à 01:35
     catchup=False,
     tags=["boursorama", "valeurs", "referentiel", "dataoz"],
 ) as dag:
@@ -128,11 +128,4 @@ with DAG(
         python_callable=run_update_valeurs,
         # Timeout généreux : scraping par ISIN peut prendre du temps sur de nombreuses valeurs
         execution_timeout=timedelta(hours=2),
-    )
-
-    t2 = PythonOperator(
-        task_id="pipeline_summary",
-        python_callable=log_pipeline_summary,
-    )
-
-    t1 >> t2
+    

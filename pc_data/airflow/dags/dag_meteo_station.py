@@ -601,7 +601,7 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2026, 4, 15),
-    schedule_interval="0 6 * * *",   # Tous les jours à 06:00
+    schedule_interval="0 1 * * *",   # Tous les jours à 01:00
     catchup=False,
     tags=["bresser", "météo", "weathercloud", "usb", "dataoz"],
 ) as dag:
@@ -640,15 +640,4 @@ with DAG(
         execution_timeout=timedelta(minutes=10),
     )
 
-    # ── Résumé global ─────────────────────────────────────────────────────────
-    tZ = PythonOperator(
-        task_id="pipeline_summary",
-        python_callable=task_pipeline_summary,
-        trigger_rule="all_done",
-    )
-
-    # ── Chaînes de dépendances ────────────────────────────────────────────────
-    #
-    # Pipeline A :  download_csv → transform_wc ──┐
-    #                                               ├──► load ──► pipeline_summary
-    # Pipeline B :  usb_extract  → transform_usb ─�
+    # ── Résumé global ──────────────────────────�

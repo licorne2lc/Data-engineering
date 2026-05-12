@@ -953,7 +953,7 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2026, 4, 20),
-    schedule_interval="0 5 * * *",
+    schedule_interval="10 1 * * *",  # tous les jours à 01:10
     catchup=False,
     max_active_runs=1,
     tags=["enedis", "conso_elec", "dataoz"],
@@ -1001,38 +1001,4 @@ with DAG(
     #     execution_timeout=timedelta(minutes=5),
     # )
     #
-    # t_api_verify = PythonOperator(
-    #     task_id="api_verify",
-    #     python_callable=task_api_verify,
-    #     trigger_rule="all_done",
-    #     execution_timeout=timedelta(minutes=2),
-    # )
-
-    # -- CANAL B : ETL inbox MANUEL (file-only) -------------------------------
-    t_extract = PythonOperator(
-        task_id="extract_inbox",
-        python_callable=task_extract_inbox,
-        execution_timeout=timedelta(minutes=10),
-    )
-
-    t_transform = PythonOperator(
-        task_id="transform_inbox",
-        python_callable=task_transform_inbox,
-        trigger_rule="all_done",
-        execution_timeout=timedelta(minutes=5),
-    )
-
-    t_load = PythonOperator(
-        task_id="load_inbox",
-        python_callable=task_load_inbox,
-        trigger_rule="all_done",
-        execution_timeout=timedelta(minutes=5),
-    )
-
-    t_summary = PythonOperator(
-        task_id="pipeline_summary",
-        python_callable=task_pipeline_summary,
-        trigger_rule="all_done",
-    )
-
-    # -
+ 

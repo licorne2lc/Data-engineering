@@ -28,7 +28,7 @@ default_args = {
 with DAG(
     dag_id="dag_oracle_load",
     description="Upload quotidien CSV curated → Oracle Object Storage (DBMS_SCHEDULER charge ensuite)",
-    schedule_interval="0 6 * * *",
+    schedule_interval="0 2 * * *",  # tous les jours à 02:00
     start_date=datetime(2026, 1, 1),
     catchup=False,
     default_args=default_args,
@@ -44,4 +44,4 @@ with DAG(
     t_th  = PythonOperator(task_id="upload_tuya_horaire",     python_callable=bkt.upload_tuya_horaire)
     t_tj  = PythonOperator(task_id="upload_tuya_journalier",  python_callable=bkt.upload_tuya_journalier)
     t_tm  = PythonOperator(task_id="upload_tuya_mensuel",     python_callable=bkt.upload_tuya_mensuel)
-    t_fin = PythonOperator(task_id="upload_finance_cotat
+    t_fin 

@@ -400,7 +400,7 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2026, 4, 29),
-    schedule_interval="30 4 * * *",     # 04:30 -- avant les DAG consommateurs
+    schedule_interval="15 1 * * *",     # 01:15 -- avant les DAG consommateurs
     catchup=False,
     max_active_runs=1,
     tags=["calendaire", "calendrier", "dataoz"],
@@ -458,13 +458,4 @@ with DAG(
     #
     #  Cascade d'enrichissement :
     #    enrichir_vacances     consomme SOCLE_CSV + VACANCES_CSV     -> calendrier.csv
-    #    enrichir_jours_feries consomme calendrier.csv + JOURS_FERIES_CSV
-    #                          (écrasement en place de calendrier.csv).
-    #
-    #  pipeline_summary attend tout (trigger_rule='all_done') pour afficher
-    #  un récap même en cas d'échec partiel.
-    # -------------------------------------------------------------------------
-
-    [t_socle, t_vacances]               >> t_enrich_vac
-    [t_enrich_vac, t_jours_feries]      >> t_enrich_feries
-    t_enrich_feries                     >> t_summary
+    #    enrichir_jours_feries consomme calendrier.csv + JOURS_FER

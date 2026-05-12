@@ -484,7 +484,7 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2026, 4, 15),
-    schedule_interval="0 2 * * *",     # tous les jours à 02:00
+    schedule_interval="5 1 * * *",     # tous les jours à 01:05
     catchup=False,
     max_active_runs=1,
     tags=["tuya", "smartlife", "conso_elec", "dataoz"],
@@ -576,14 +576,4 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    # ── Dépendances ─────────────────────────────────────────────────────────
-    # Init du schéma → puis liste appareils → puis extractions en parallèle
-    t_init >> t_list >> [t_mois, t_jours, t_heures, t_quarts]
-    # Synthèses CSV (mois / jours) à partir des XCom
-    t_mois  >> t_syn_m
-    t_jours >> t_syn_j
-    # Chargement DB (heures + 15min) une fois les extractions fines terminées
-    [t_heures, t_quarts] >> t_load
-    # Synthèses horaire / 15min + test SQL à partir de la DB (après le load)
-    t_load >> [t_syn_h, t_syn_q, t_sql_test]
-    # Résumé final après toutes les synthèses + test DB
+    # ── Dépendances ─────────────────────────────────────────────�

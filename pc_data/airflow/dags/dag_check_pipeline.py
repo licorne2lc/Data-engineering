@@ -457,4 +457,107 @@ def pipeline_summary(**kwargs):
 
     print()
     print("=" * 60)
-    print("   RÉSUMÉ INTÉGRAL PIPELINE DATA
+    print("   RÉSUMÉ INTÉGRAL PIPELINE DATAOZ")
+    print(f"   {now}")
+    print("=" * 60)
+
+    all_ok = True
+    for label, result in steps.items():
+        icon = "✅" if result == "OK" else "❌"
+        if result != "OK":
+            all_ok = False
+        print(f"  {icon}  {label} → {result or 'ÉCHEC'}")
+
+    print("=" * 60)
+    if all_ok:
+        print("  🎉  PIPELINE 100% OPÉRATIONNEL")
+    else:
+        print("  🚨  DES ANOMALIES ONT ÉTÉ DÉTECTÉES — voir logs ci-dessus")
+    print("=" * 60)
+
+    # ── Alerte email si au moins une étape en erreur ──────────────────
+    if not all_ok:
+        rows_html = ""
+        for label, result in steps.items():
+            ok      = result == "OK"
+            couleur = "#d4edda" if ok else "#f8d7da"
+            icone   = "✅" if ok else "❌"
+            statut  = result or "ÉCHEC"
+            rows_html += (
+                f'<tr style="background:{couleur};">'
+                f'<td style="padding:8px 12px;">{icone} {label}</td>'
+                f'<td style="padding:8px 12px;font-weight:bold;">{statut}</td>'
+                f'</tr>'
+            )
+
+        html_body = f"""
+        <html><body style="font-family:Arial,sans-serif;color:#333;">
+          <h2 style="color:#c0392b;">🚨 DataOZ — Anomalie pipeline détectée</h2>
+          <p><strong>Date :</strong> {now} UTC</p>
+          <table border="0" cellspacing="0" cellpadding="0"
+                 style="border-collapse:collapse;width:100%;max-width:600px;">
+            <thead>
+              <tr style="background:#343a40;color:#fff;">
+                <th style="padding:10px 12px;text-align:left;">Étape</th>
+                <th style="padding:10px 12px;text-align:left;">Statut</th>
+              </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+          <p style="margin-top:16px;">
+            👉 <a href="http://localhost:8080/dags/dag_check_pipeline/grid">
+            Voir les logs dans Airflow</a>
+          </p>
+          <hr style="margin-top:24px;">
+          <small style="color:#888;">DataOZ Monitoring — dag_check_pipeline</small>
+        </body></html>
+        """
+
+        nb_erreurs = sum(1 for v in steps.values() if v != "OK")
+        subject    = f"🚨 DataOZ Pipeline — {nb_erreurs} anomalie(s) détectée(s) [{now[:10]}]"
+
+        try:
+            send_email(to=ALERT_EMAIL, subject=subject, html_content=html_body)
+            print(f"  📧  Alerte email envoyée → {ALERT_EMAIL}", flush=True)
+        except Exception as e:
+            print(f"  ⚠️  Impossible d'envoyer l'email d'alerte : {e}", flush=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DAG DEFINITION
+# ══════════════════════════════════════════════════════════════════════════════
+
+default_args = {
+    "owner":            "dataoz",
+    "depends_on_past":  False,
+    "retries":          0,
+    "email_on_failure": False,
+}
+
+with DAG(
+    dag_id="dag_check_pipeline",
+    description="Vérification intégrale de la chaîne DataOZ (6 étapes)",
+    schedule_interval="0 5 * * *",    # tous les jours à 05:00 UTC (après fenêtre collecte 01h-02h)
+                                      # déclenchement principal : TriggerDagRunOperator dans chaque DAG source
+    start_date=datetime(2026, 1, 1),
+    catchup=False,
+    max_active_runs=1,                # évite les runs simultanés si plusieurs DAGs triggèrent en même temps
+    default_args=default_args,
+    tags=["dataoz", "monitoring", "check"],
+) as dag:
+
+    t1 = PythonOperator(task_id="check_collection_dags",  python_callable=check_collection_dags)
+    t2 = PythonOperator(task_id="check_csv_freshness",    python_callable=check_csv_freshness)
+    t3 = PythonOperator(task_id="check_oci_bucket",       python_callable=check_oci_bucket)
+    t4 = PythonOperator(task_id="check_oracle",           python_callable=check_oracle)
+    t5 = PythonOperator(task_id="check_streamlit",        python_callable=check_streamlit)
+    t6 = PythonOperator(task_id="check_smtp",             python_callable=check_smtp)
+
+    t_summary = PythonOperator(
+        task_id="pipeline_summary",
+        python_callable=pipeline_summary,
+        trigger_rule=TriggerRule.ALL_DONE,   # s'exécute même si des tâches échouent
+    )
+
+    # Exécution parallèle des 6 checks → résumé final
+    [t1, t2, t3, t4, t5, t6] >> t_summary
