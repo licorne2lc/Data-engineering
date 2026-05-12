@@ -576,4 +576,24 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    # ── Dépendances ─────────────────────────────────────────────�
+    # ── Dépendances ─────────────────────────────────────────────────────────
+    # Init du schéma → puis liste appareils → puis extractions en parallèle
+    t_init >> t_list >> [t_mois, t_jours, t_heures, t_quarts]
+    # Synthèses CSV (mois / jours) à partir des XCom
+    t_mois  >> t_syn_m
+    t_jours >> t_syn_j
+    # Chargement DB (heures + 15min) une fois les extractions fines terminées
+    [t_heures, t_quarts] >> t_load
+    # Synthèses horaire / 15min + test SQL à partir de la DB (après le load)
+    t_load >> [t_syn_h, t_syn_q, t_sql_test]
+    # Résumé final après toutes les synthèses + test DB
+    [t_syn_m, t_syn_j, t_syn_h, t_syn_q, t_sql_test] >> t_summary
+
+    t_trigger = TriggerDagRunOperator(
+        task_id="trigger_check_pipeline",
+        trigger_dag_id="dag_check_pipeline",
+        wait_for_completion=False,
+        trigger_rule="all_done",
+    )
+
+    t_summary >> t_trigger

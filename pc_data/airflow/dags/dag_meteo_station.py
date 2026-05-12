@@ -640,4 +640,27 @@ with DAG(
         execution_timeout=timedelta(minutes=10),
     )
 
-    # ── Résumé global ──────────────────────────�
+    # ── Résumé global ───────────────────────────────────────────────────────────────
+    tS = PythonOperator(
+        task_id="pipeline_summary",
+        python_callable=task_pipeline_summary,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_trigger = TriggerDagRunOperator(
+        task_id="trigger_check_pipeline",
+        trigger_dag_id="dag_check_pipeline",
+        wait_for_completion=False,
+        trigger_rule="all_done",
+    )
+
+    # ── Dépendances ──────────────────────────────────────────────────────────
+    # Pipeline A (Weathercloud) : téléchargement → transformation
+    tA1 >> tA2
+    # Pipeline B (USB Bresser)  : extraction → transformation
+    tB1 >> tB2
+    # Load : fusion des deux pipelines (all_done = un seul suffit)
+    [tA2, tB2] >> tL
+    # Résumé → déclenchement du check
+    tL >> tS >> t_trigger
