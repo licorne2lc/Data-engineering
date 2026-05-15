@@ -72,97 +72,7 @@ La requête Oracle est générée automatiquement et affichée avant exécution.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    classDef user     fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
-    classDef infra    fill:#c7d2fe,stroke:#6366f1,stroke-width:2px,color:#312e81
-    classDef frontend fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
-    classDef backend  fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
-    classDef monitor  fill:#fde68a,stroke:#d97706,stroke-width:2px,color:#78350f
-    classDef storage  fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
-    classDef source   fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#831843
-
-    USER(["👤 Navigateur utilisateur
-https://sql-database.dataoz.fr"]):::user
-
-    subgraph LAYER_DNS["🌐  DNS — IONOS"]
-        DNS["Enregistrement A → IP publique VM OCI"]:::infra
-    end
-
-    subgraph LAYER_VM["🖥️  OCI Compute VM · Ubuntu 22.04 · Nginx · Reverse Proxy · Let's Encrypt · HTTPS:443"]
-        direction LR
-        subgraph FRONT["🟢  FRONTEND"]
-            APP["Streamlit — Explorateur SQL
-Sélection source · granularité · période
-st.pills · génération SQL · export CSV"]:::frontend
-        end
-        subgraph BACK["🔴  BACKEND  —  PC LOCAL · Apache Airflow (Docker)"]
-            direction LR
-            D1["dag_meteo_station
-01h15 CEST"]:::backend
-            D2["dag_conso_elec_tuya
-01h05 CEST"]:::backend
-            D3["dag_conso_elec_enedis
-01h10 CEST"]:::backend
-            D4["dag_boursorama_*
-01h20–01h35 CEST"]:::backend
-            D5["dag_calendaire
-01h15 CEST"]:::backend
-            D6["dag_oracle_load
-02h30 CEST"]:::backend
-            D7{{"dag_check_pipeline
-05h15 CEST"}}:::monitor
-        end
-    end
-
-    subgraph LAYER_STORE["💾  Stockage"]
-        direction LR
-        CSV["📂 CSV curated
-PC local"]:::storage
-        BUCKET["🪣 OCI Object Storage
-dataoz-curated"]:::storage
-        DB["🗄️ Oracle ADB 23ai
-10 tables · DBTIMEZONE UTC
-DBMS_SCHEDULER 04h00 CEST"]:::storage
-    end
-
-    subgraph LAYER_SRC["🔌  Sources externes"]
-        direction LR
-        S1["🌦️ Station météo
-Bresser"]:::source
-        S2["⚡ Tuya SmartLife
-API"]:::source
-        S3["🏠 Enedis
-Espace client"]:::source
-        S4["📈 Boursorama
-Playwright"]:::source
-        S5["📅 API gouv.fr
-Calendrier"]:::source
-    end
-
-    USER --> DNS
-    DNS --> APP
-    APP <-->|"python-oracledb · mTLS wallet"| DB
-
-    S1 --> D1
-    S2 --> D2
-    S3 --> D3
-    S4 --> D4
-    S5 --> D5
-
-    D1 & D2 & D3 & D4 & D5 --> CSV
-    CSV --> D6
-    D6 -->|"OCI SDK · HTTPS"| BUCKET
-    BUCKET -->|"DBMS_SCHEDULER 04h00 CEST"| DB
-    D1 & D2 & D3 & D4 & D6 -->|"TriggerDagRunOperator"| D7
-
-    style LAYER_DNS   fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
-    style LAYER_VM    fill:#ede9fe,stroke:#7c3aed,stroke-width:3px,stroke-dasharray:6 3
-    style LAYER_STORE fill:#fef9c3,stroke:#ca8a04,stroke-width:2px
-    style LAYER_SRC   fill:#fce7f3,stroke:#db2777,stroke-width:2px
-    style FRONT       fill:#d1fae5,stroke:#059669,stroke-width:2px
-    style BACK        fill:#fee2e2,stroke:#dc2626,stroke-width:2px
-```
+![Architecture DataOZ](architecture%20data.png)
 
 ### Frontend — Streamlit + IONOS
 
@@ -446,4 +356,13 @@ L'enriched CSV (`boursorama_cotations_enriched.csv`) est un référentiel d'inst
 **Gestion du format Oracle VARCHAR2 pour les timestamps**
 `DBMS_CLOUD.COPY_DATA` convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière robuste.
 
-**Dual-channel météo avec catalogue de 
+**Dual-channel météo avec catalogue de mapping**
+Les deux sources (Weathercloud et clé USB) produisent des formats de colonnes différents. Un `catalog.json` centralise la correspondance FR↔EN et normalise les données vers un schéma commun (`common_weather_database`).
+
+**Airflow `start_date` vs `execution_date`**
+Le check de fraîcheur des DAGs utilise `DagRun.start_date` (heure réelle d'exécution) et non `execution_date` (date logique de l'intervalle, toujours en retard d'une période).
+
+---
+
+*Projet personnel — Moulinier Jérôme | Stack : Python · Airflow · Oracle ADB · OCI · Streamlit*
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
