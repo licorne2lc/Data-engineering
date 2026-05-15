@@ -74,49 +74,51 @@ La requête Oracle est générée automatiquement et affichée avant exécution.
 
 ```mermaid
 flowchart TD
-    classDef user     fill:#ffffff,stroke:#333333,stroke-width:2px,color:#000000
-    classDef infra    fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
-    classDef frontend fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724
-    classDef backend  fill:#fde8d8,stroke:#e67e22,stroke-width:2px,color:#7d3c00
-    classDef storage  fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#856404
-    classDef source   fill:#e2e3e5,stroke:#6c757d,stroke-width:2px,color:#383d41
-    classDef monitor  fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24
+    classDef user     fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    classDef infra    fill:#c7d2fe,stroke:#6366f1,stroke-width:2px,color:#312e81
+    classDef frontend fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef backend  fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef monitor  fill:#fde68a,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef storage  fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef source   fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#831843
 
-    USER(["👤 Utilisateur
+    USER(["👤 Navigateur utilisateur
 https://sql-database.dataoz.fr"]):::user
-    DNS["🌐 IONOS DNS
-A record → IP VM OCI"]:::infra
-    NGINX["OCI Compute VM — Ubuntu 22.04
-Let's Encrypt · HTTPS · Certbot"]:::infra
 
-    subgraph FRONT["  FRONTEND  "]
-        APP["Streamlit — Explorateur SQL
+    subgraph LAYER_DNS["🌐  DNS — IONOS"]
+        DNS["Enregistrement A → IP publique VM OCI"]:::infra
+    end
+
+    subgraph LAYER_VM["🖥️  OCI Compute VM · Ubuntu 22.04 · Nginx · Reverse Proxy · Let's Encrypt · HTTPS:443"]
+        direction LR
+        subgraph FRONT["🟢  FRONTEND"]
+            APP["Streamlit — Explorateur SQL
 Sélection source · granularité · période
 st.pills · génération SQL · export CSV"]:::frontend
-    end
-
-    subgraph BACK["  BACKEND — PC LOCAL · Apache Airflow (Docker)  "]
-        direction LR
-        D1["dag_meteo_station
+        end
+        subgraph BACK["🔴  BACKEND  —  PC LOCAL · Apache Airflow (Docker)"]
+            direction LR
+            D1["dag_meteo_station
 01h15 CEST"]:::backend
-        D2["dag_conso_elec_tuya
+            D2["dag_conso_elec_tuya
 01h05 CEST"]:::backend
-        D3["dag_conso_elec_enedis
+            D3["dag_conso_elec_enedis
 01h10 CEST"]:::backend
-        D4["dag_boursorama_*
+            D4["dag_boursorama_*
 01h20–01h35 CEST"]:::backend
-        D5["dag_calendaire
+            D5["dag_calendaire
 01h15 CEST"]:::backend
-        D6["dag_oracle_load
+            D6["dag_oracle_load
 02h30 CEST"]:::backend
-        D7["dag_check_pipeline
-05h15 CEST"]:::monitor
+            D7{{"dag_check_pipeline
+05h15 CEST"}}:::monitor
+        end
     end
 
-    subgraph STORE["  💾 Stockage  "]
+    subgraph LAYER_STORE["💾  Stockage"]
         direction LR
         CSV["📂 CSV curated
-locaux"]:::storage
+PC local"]:::storage
         BUCKET["🪣 OCI Object Storage
 dataoz-curated"]:::storage
         DB["🗄️ Oracle ADB 23ai
@@ -124,21 +126,22 @@ dataoz-curated"]:::storage
 DBMS_SCHEDULER 04h00 CEST"]:::storage
     end
 
-    subgraph SRC["  🔌 Sources externes  "]
+    subgraph LAYER_SRC["🔌  Sources externes"]
         direction LR
         S1["🌦️ Station météo
 Bresser"]:::source
         S2["⚡ Tuya SmartLife
 API"]:::source
         S3["🏠 Enedis
-espace client"]:::source
+Espace client"]:::source
         S4["📈 Boursorama
 Playwright"]:::source
         S5["📅 API gouv.fr
-calendrier"]:::source
+Calendrier"]:::source
     end
 
-    USER --> DNS --> NGINX --> APP
+    USER --> DNS
+    DNS --> APP
     APP <-->|"python-oracledb · mTLS wallet"| DB
 
     S1 --> D1
@@ -149,10 +152,16 @@ calendrier"]:::source
 
     D1 & D2 & D3 & D4 & D5 --> CSV
     CSV --> D6
-    D6 -->|"HTTPS · OCI SDK"| BUCKET
-    BUCKET -->|"DBMS_SCHEDULER · 04h00 CEST"| DB
-
+    D6 -->|"OCI SDK · HTTPS"| BUCKET
+    BUCKET -->|"DBMS_SCHEDULER 04h00 CEST"| DB
     D1 & D2 & D3 & D4 & D6 -->|"TriggerDagRunOperator"| D7
+
+    style LAYER_DNS   fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    style LAYER_VM    fill:#ede9fe,stroke:#7c3aed,stroke-width:3px,stroke-dasharray:6 3
+    style LAYER_STORE fill:#fef9c3,stroke:#ca8a04,stroke-width:2px
+    style LAYER_SRC   fill:#fce7f3,stroke:#db2777,stroke-width:2px
+    style FRONT       fill:#d1fae5,stroke:#059669,stroke-width:2px
+    style BACK        fill:#fee2e2,stroke:#dc2626,stroke-width:2px
 ```
 
 ![Architecture DataOZ](architecture%20data.png)
@@ -437,14 +446,4 @@ Chaque DAG d'approvisionnement comporte une tâche finale `trigger_check_pipelin
 L'enriched CSV (`boursorama_cotations_enriched.csv`) est un référentiel d'instruments (ISIN, secteur, éligibilité) géré par `dag_boursorama_valeurs`. Il ne se met à jour que lorsque de nouveaux instruments sont ajoutés aux dossiers source (ETF/, premiere/, specifique/) — détection par hash de manifeste. Il peut donc rester stable plusieurs mois : c'est intentionnel, pas une panne.
 
 **Gestion du format Oracle VARCHAR2 pour les timestamps**
-`DBMS_CLOUD.COPY_DATA` convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière robuste.
-
-**Dual-channel météo avec catalogue de mapping**
-Les deux sources (Weathercloud et clé USB) produisent des formats de colonnes différents. Un `catalog.json` centralise la correspondance FR↔EN et normalise les données vers un schéma commun (`common_weather_database`).
-
-**Airflow `start_date` vs `execution_date`**
-Le check de fraîcheur des DAGs utilise `DagRun.start_date` (heure réelle d'exécution) et non `execution_date` (date logique de l'intervalle, toujours en retard d'une période).
-
----
-
-*Projet personnel — Moulinier Jérôme | Stack : Python · Airflow · Oracle ADB · OCI · Streamlit*
+`DBMS_CLOUD.COPY_DATA` convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière ro
