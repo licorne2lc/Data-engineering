@@ -74,57 +74,85 @@ La requête Oracle est générée automatiquement et affichée avant exécution.
 
 ```mermaid
 flowchart TD
-    subgraph SOURCES["🔌 Sources de données"]
-        S1["🌦️ Station météo Bresser"]
-        S2["⚡ Tuya SmartLife API"]
-        S3["🏠 Enedis espace client"]
-        S4["📈 Boursorama"]
-        S5["📅 API gouv.fr"]
-    end
+    classDef user     fill:#ffffff,stroke:#333333,stroke-width:2px,color:#000000
+    classDef infra    fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    classDef frontend fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724
+    classDef backend  fill:#fde8d8,stroke:#e67e22,stroke-width:2px,color:#7d3c00
+    classDef storage  fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#856404
+    classDef source   fill:#e2e3e5,stroke:#6c757d,stroke-width:2px,color:#383d41
+    classDef monitor  fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24
 
-    subgraph LOCAL["🖥️ PC LOCAL — Backend collecte · Apache Airflow (Docker)"]
-        direction LR
-        D1["dag_meteo_station"]
-        D2["dag_conso_elec_tuya"]
-        D3["dag_conso_elec_enedis"]
-        D4["dag_boursorama_*"]
-        D5["dag_calendaire"]
-        CSV["📂 CSV curated locaux"]
-        D6["dag_oracle_load
-02h30 CEST"]
-        D7["dag_check_pipeline
-05h15 CEST ⏰"]
-    end
+    USER(["👤 Utilisateur
+https://sql-database.dataoz.fr"]):::user
+    DNS["🌐 IONOS DNS
+A record → IP VM OCI"]:::infra
+    NGINX["OCI Compute VM — Ubuntu 22.04
+Let's Encrypt · HTTPS · Certbot"]:::infra
 
-    subgraph OCI["☁️ Oracle Cloud Infrastructure — Always Free"]
-        BUCKET["🪣 OCI Object Storage
-dataoz-curated"]
-        SCHED["⚙️ DBMS_SCHEDULER
-04h00 CEST · 02h00 UTC"]
-        DB["🗄️ Oracle ADB 23ai
-10 tables · DBTIMEZONE UTC"]
-    end
-
-    subgraph FRONT["🌐 Frontend — VM OCI Compute · IONOS DNS"]
+    subgraph FRONT["  FRONTEND  "]
         APP["Streamlit — Explorateur SQL
-sql-database.dataoz.fr"]
-        USER["👤 Utilisateur
-https://sql-database.dataoz.fr"]
+Sélection source · granularité · période
+st.pills · génération SQL · export CSV"]:::frontend
     end
 
-    S1 --> D1 --> CSV
-    S2 --> D2 --> CSV
-    S3 --> D3 --> CSV
-    S4 --> D4 --> CSV
-    S5 --> D5 --> CSV
+    subgraph BACK["  BACKEND — PC LOCAL · Apache Airflow (Docker)  "]
+        direction LR
+        D1["dag_meteo_station
+01h15 CEST"]:::backend
+        D2["dag_conso_elec_tuya
+01h05 CEST"]:::backend
+        D3["dag_conso_elec_enedis
+01h10 CEST"]:::backend
+        D4["dag_boursorama_*
+01h20–01h35 CEST"]:::backend
+        D5["dag_calendaire
+01h15 CEST"]:::backend
+        D6["dag_oracle_load
+02h30 CEST"]:::backend
+        D7["dag_check_pipeline
+05h15 CEST"]:::monitor
+    end
 
+    subgraph STORE["  💾 Stockage  "]
+        direction LR
+        CSV["📂 CSV curated
+locaux"]:::storage
+        BUCKET["🪣 OCI Object Storage
+dataoz-curated"]:::storage
+        DB["🗄️ Oracle ADB 23ai
+10 tables · DBTIMEZONE UTC
+DBMS_SCHEDULER 04h00 CEST"]:::storage
+    end
+
+    subgraph SRC["  🔌 Sources externes  "]
+        direction LR
+        S1["🌦️ Station météo
+Bresser"]:::source
+        S2["⚡ Tuya SmartLife
+API"]:::source
+        S3["🏠 Enedis
+espace client"]:::source
+        S4["📈 Boursorama
+Playwright"]:::source
+        S5["📅 API gouv.fr
+calendrier"]:::source
+    end
+
+    USER --> DNS --> NGINX --> APP
+    APP <-->|"python-oracledb · mTLS wallet"| DB
+
+    S1 --> D1
+    S2 --> D2
+    S3 --> D3
+    S4 --> D4
+    S5 --> D5
+
+    D1 & D2 & D3 & D4 & D5 --> CSV
     CSV --> D6
-    D6 -- "HTTPS · OCI SDK" --> BUCKET
-    BUCKET --> SCHED --> DB
+    D6 -->|"HTTPS · OCI SDK"| BUCKET
+    BUCKET -->|"DBMS_SCHEDULER · 04h00 CEST"| DB
 
-    D1 & D2 & D3 & D4 & D6 -- "TriggerDagRunOperator" --> D7
-
-    DB -- "python-oracledb · mTLS wallet" --> APP --> USER
+    D1 & D2 & D3 & D4 & D6 -->|"TriggerDagRunOperator"| D7
 ```
 
 ![Architecture DataOZ](architecture%20data.png)
