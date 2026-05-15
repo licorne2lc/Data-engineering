@@ -72,44 +72,59 @@ La requête Oracle est générée automatiquement et affichée avant exécution.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PC LOCAL (Docker / Apache Airflow)                                         │
-│                                                                             │
-│  Sources           DAGs collecte          CSV curated locaux                │
-│  ─────────         ─────────────          ─────────────────                 │
-│  Station météo ──► dag_meteo_station  ──► météo/bresser/                    │
-│  Tuya SmartLife ──► dag_conso_elec_tuya ► conso_elec/tuya/                  │
-│  Enedis (scrap) ──► dag_conso_elec_enedis► conso_elec/enedis/               │
-│  Boursorama ─────► dag_boursorama_*   ──► finance/cotations/                │
-│  API gouv.fr ────► dag_calendaire     ──► calendaire/                       │
-│                                                                             │
-│  dag_oracle_load ────────────────────────► Upload vers OCI bucket           │
-│       │                                                                     │
-│       └─► TriggerDagRunOperator ─────────► dag_check_pipeline ◄─────────┐  │
-│  (idem pour chaque DAG collecte)                  ▲                      │  │
-│                                         cron 05h15 CEST (filet)         │  │
-└──────────────────────────────────────┬───────────────────────────────────┘  │
-                                       │ HTTPS (OCI SDK)
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│  ORACLE CLOUD INFRASTRUCTURE (Always Free Tier)                             │
-│                                                                             │
-│  Object Storage bucket (dataoz-curated)                                     │
-│        │                                                                    │
-│        │  DBMS_SCHEDULER COPY_DATA (04h00 CEST / 02h00 UTC)                │
-│        ▼                                                                    │
-│  Oracle Autonomous Database (dataozdb)                                      │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐  │
-│  │ METEO_BRESSER│ │ ENEDIS_30MIN │ │ TUYA_15MIN   │ │ FINANCE_COTATIONS │  │
-│  │ ENEDIS_JOUR  │ │ ENEDIS_HEURE │ │ TUYA_HORAIRE │ │ CALENDRIER       │  │
-│  │              │ │              │ │ TUYA_JOUR    │ │                  │  │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────┘  │
-│        │                                                                    │
-│        │  oracledb (Python, wallet mTLS)                                   │
-│        ▼                                                                    │
-│  Streamlit — DataOZ Explorateur de données                                  │
-│  https://sql-database.dataoz.fr/            (VM Compute + IONOS DNS)        │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SOURCES["🔌 Sources de données"]
+        S1["🌦️ Station météo Bresser"]
+        S2["⚡ Tuya SmartLife API"]
+        S3["🏠 Enedis espace client"]
+        S4["📈 Boursorama"]
+        S5["📅 API gouv.fr"]
+    end
+
+    subgraph LOCAL["🖥️ PC LOCAL — Backend collecte · Apache Airflow (Docker)"]
+        direction LR
+        D1["dag_meteo_station"]
+        D2["dag_conso_elec_tuya"]
+        D3["dag_conso_elec_enedis"]
+        D4["dag_boursorama_*"]
+        D5["dag_calendaire"]
+        CSV["📂 CSV curated locaux"]
+        D6["dag_oracle_load
+02h30 CEST"]
+        D7["dag_check_pipeline
+05h15 CEST ⏰"]
+    end
+
+    subgraph OCI["☁️ Oracle Cloud Infrastructure — Always Free"]
+        BUCKET["🪣 OCI Object Storage
+dataoz-curated"]
+        SCHED["⚙️ DBMS_SCHEDULER
+04h00 CEST · 02h00 UTC"]
+        DB["🗄️ Oracle ADB 23ai
+10 tables · DBTIMEZONE UTC"]
+    end
+
+    subgraph FRONT["🌐 Frontend — VM OCI Compute · IONOS DNS"]
+        APP["Streamlit — Explorateur SQL
+sql-database.dataoz.fr"]
+        USER["👤 Utilisateur
+https://sql-database.dataoz.fr"]
+    end
+
+    S1 --> D1 --> CSV
+    S2 --> D2 --> CSV
+    S3 --> D3 --> CSV
+    S4 --> D4 --> CSV
+    S5 --> D5 --> CSV
+
+    CSV --> D6
+    D6 -- "HTTPS · OCI SDK" --> BUCKET
+    BUCKET --> SCHED --> DB
+
+    D1 & D2 & D3 & D4 & D6 -- "TriggerDagRunOperator" --> D7
+
+    DB -- "python-oracledb · mTLS wallet" --> APP --> USER
 ```
 
 ![Architecture DataOZ](architecture%20data.png)
