@@ -164,8 +164,6 @@ Calendrier"]:::source
     style BACK        fill:#fee2e2,stroke:#dc2626,stroke-width:2px
 ```
 
-![Architecture DataOZ](architecture%20data.png)
-
 ### Frontend — Streamlit + IONOS
 
 L'interface utilisateur est hébergée sur une **VM OCI Compute** (Ubuntu 22.04, Always Free) et exposée via le domaine `sql-database.dataoz.fr` géré chez **IONOS** (enregistrement DNS de type A vers l'IP publique de la VM). Le certificat HTTPS est émis via Let's Encrypt et le service Streamlit tourne en permanence via `systemd`. La connexion à Oracle ADB s'effectue directement depuis la VM via `python-oracledb` en mode thin (wallet mTLS) — aucun middleware applicatif interposé.
@@ -446,4 +444,6 @@ Chaque DAG d'approvisionnement comporte une tâche finale `trigger_check_pipelin
 L'enriched CSV (`boursorama_cotations_enriched.csv`) est un référentiel d'instruments (ISIN, secteur, éligibilité) géré par `dag_boursorama_valeurs`. Il ne se met à jour que lorsque de nouveaux instruments sont ajoutés aux dossiers source (ETF/, premiere/, specifique/) — détection par hash de manifeste. Il peut donc rester stable plusieurs mois : c'est intentionnel, pas une panne.
 
 **Gestion du format Oracle VARCHAR2 pour les timestamps**
-`DBMS_CLOUD.COPY_DATA` convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière ro
+`DBMS_CLOUD.COPY_DATA` convertit les timestamps CSV en format NLS Oracle (`DD-MON-RR HH24:MI:SS`) même pour les colonnes VARCHAR2. La requête de fraîcheur utilise `TO_DATE(SUBSTR(TRIM(ts),1,9), 'DD-MON-RR')` pour extraire la partie date de manière robuste.
+
+**Dual-channel météo avec catalogue de 
