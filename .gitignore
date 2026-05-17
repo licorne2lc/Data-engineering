@@ -69,3 +69,8 @@ venv/
 *.swo
 .DS_Store
 Thumbs.db
+
+docs/*.pptx
+docs/*.pdf
+docs/*.vsdx
+docs/connexions_powershell*
