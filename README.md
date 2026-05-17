@@ -72,7 +72,7 @@ La requête Oracle est générée automatiquement et affichée avant exécution.
 
 ## Architecture
 
-![Architecture DataOZ](architecture%20data.png)
+![Architecture DataOZ](pc_data/architecture%20data.png)
 
 ### Frontend — Streamlit + IONOS
 
