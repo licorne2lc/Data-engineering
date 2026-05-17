@@ -89,7 +89,7 @@ Le backend est entièrement **piloté par fichiers** : les données transitent e
 ### Consommation électrique — Tuya / SmartLife
 - **API** : Tuya Cloud API (Beta), statistique `add_ele`
 - **Appareils** : prises connectées SmartLife mesurant la consommation par appareil
-- **Granularités** : 15 minutes, horaire, journalier, mensuel
+- **Granularités** : 15 minutes, horaire, journalier, mensuel — les données horaires sont disponibles uniquement sur 6 appareils (limitation API Tuya)
 - **Collecte** : quotidienne à 02h00 UTC, historique complet depuis l'origine
 
 ### Consommation électrique — Enedis
