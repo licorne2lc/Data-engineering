@@ -222,6 +222,12 @@ L'interface de sélection de source et de granularité utilise des **étiquettes
 
 ## Monitoring intégral
 
+### Synchronisation — chronologie nocturne
+
+![Chronologie pipeline DataOZ](docs/monitoring/chronologie_pipeline.png)
+
+Le pipeline s'exécute entièrement la nuit, piloté par deux réveils PC planifiés (tâches Windows `WakeToRun=true`) qui assurent la disponibilité de Docker et d'Airflow au bon moment.
+
 ### Déclenchement automatique
 
 `dag_check_pipeline` est déclenché de deux façons complémentaires :
@@ -229,16 +235,6 @@ L'interface de sélection de source et de granularité utilise des **étiquettes
 1. **`TriggerDagRunOperator`** dans chaque DAG d'approvisionnement — le check démarre dès qu'un pipeline termine, qu'il soit planifié ou déclenché manuellement. Le paramètre `max_active_runs=1` sur `dag_check_pipeline` empêche les runs simultanés si plusieurs DAGs finissent en même temps.
 
 2. **Cron filet `15 5 * * *`** (05h15 CEST) — garantit un run quotidien complet après les jobs Oracle DBMS_SCHEDULER (04h00 CEST / 02h00 UTC), même si aucun DAG n'a déclenché de trigger.
-
-```
-01h05 CEST dag_conso_elec_tuya termine    ──► check (Tuya frais)
-01h10 CEST dag_conso_elec_enedis termine  ──► check (Enedis frais)
-01h15 CEST dag_meteo_station termine      ──► check (Météo fraîche)
-01h20 CEST dag_boursorama_cotation termine──► check (Cotations fraîches, lun-ven)
-~03h00 CEST dag_oracle_load termine       ──► check (OCI uploadé)
- 04h00 CEST DBMS_SCHEDULER Oracle         chargement des 10 tables (02h00 UTC)
- 05h15 CEST cron filet                    ──► check complet post-Oracle
-```
 
 ### Étapes de vérification
 
