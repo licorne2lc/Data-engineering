@@ -89,15 +89,15 @@ Le backend est entièrement **piloté par fichiers** : les données transitent e
 ### Consommation électrique — Tuya / SmartLife
 - **API** : Tuya Cloud API (Beta), statistique `add_ele`
 - **Appareils** : prises connectées SmartLife mesurant la consommation par appareil
-- **Granularités** : 15 minutes, horaire, journalier, mensuel
-- **Collecte** : quotidienne à 02h00 UTC, historique complet depuis l'origine
+- **Granularités** : 15 minutes, horaire, journalier, mensuel — les données horaires sont disponibles uniquement sur 6 appareils (limitation API Tuya)
+- **Collecte** : quotidienne à 01h05 CEST, historique complet depuis l'origine
 
 ### Consommation électrique — Enedis
 - **Canal B** : intégration manuelle de fichiers XLSX déposés dans un inbox (`inbox_enedis/`) — priorité haute, les données manuelles écrasent le scraping en cas de doublon
 - **Canal C** : scraping automatique via Playwright depuis l'espace client Enedis (courbe de charge J-5 → J-2), déposé dans `inbox_enedis_scrap/`
 - **Granularités** : 30 minutes → agrégats horaire + journalier calculés automatiquement
 - **Fusion** : base unique `Database_Enedis_30_min.csv`, les deux canaux convergent avec audit des divergences
-- **Planification** : quotidien à 05h00 UTC — Canal B d'abord, Canal C enchaîné, agrégations en parallèle
+- **Planification** : quotidien à 01h10 CEST — Canal B d'abord, Canal C enchaîné, agrégations en parallèle
 
 ### Météo — Station Bresser MeteoChamp HD
 - **Canal A** : export CSV mensuel depuis Weathercloud (Playwright, login automatique)
@@ -106,8 +106,8 @@ Le backend est entièrement **piloté par fichiers** : les données transitent e
 - **Mapping** : catalogue JSON de correspondance des colonnes FR↔EN entre les deux canaux
 
 ### Finance — Boursorama
-- **Collecte cotations** (`dag_boursorama_cotation`) : historiques 5J et 10A via Playwright (Chromium headless), quotidien à 06h00 UTC, jours ouvrés
-- **Référentiel valeurs** (`dag_boursorama_valeurs`) : enrichissement ISIN/secteur/éligibilité PEA des instruments, hebdomadaire (lundi 05h00), ne se met à jour que si de nouveaux instruments sont détectés
+- **Collecte cotations** (`dag_boursorama_cotation`) : historiques 5J et 10A via Playwright (Chromium headless), lun–ven à 01h05 CEST
+- **Référentiel valeurs** (`dag_boursorama_valeurs`) : enrichissement ISIN/secteur/éligibilité PEA des instruments, lundi à 01h35 CEST, ne se met à jour que si de nouveaux instruments sont détectés
 - **Données chargées** : 473 000+ enregistrements OHLC dans `FINANCE_COTATIONS`
 
 ### Calendrier
@@ -153,11 +153,11 @@ dag_calendaire          → socle_calendrier.csv
 
 ### Étape 2 — Upload bucket OCI
 
-`dag_oracle_load` (quotidien 06h00 UTC) upload les 10 fichiers CSV curated vers le bucket OCI `dataoz-curated` via l'OCI Python SDK (`oci.object_storage`). À la fin de tous les uploads, un `TriggerDagRunOperator` déclenche `dag_check_pipeline`.
+`dag_oracle_load` (quotidien 02h30 CEST) upload les 10 fichiers CSV curated vers le bucket OCI `dataoz-curated` via l'OCI Python SDK (`oci.object_storage`). Chaque upload est suivi d'une tâche `integrity_*` qui vérifie la concordance exacte entre les métriques locales (XCom) et le fichier reçu dans le bucket (lignes, colonnes, octets). À la fin de tous les canaux, un `TriggerDagRunOperator` déclenche `dag_check_pipeline`.
 
 ### Étape 3 — ETL Oracle (cloud, automatique)
 
-`DBMS_SCHEDULER` déclenche les jobs à 07h30 UTC. Chaque job appelle `DBMS_CLOUD.COPY_DATA` pour charger le fichier CSV depuis le bucket dans la table Oracle correspondante (TRUNCATE + reload).
+`DBMS_SCHEDULER` déclenche les jobs à **02h00 UTC (04h00 CEST)**. Chaque job appelle `DBMS_CLOUD.COPY_DATA` pour charger le fichier CSV depuis le bucket dans la table Oracle correspondante (TRUNCATE + reload).
 
 Pour `FINANCE_COTATIONS`, le chargement passe par une table de staging (`FINANCE_COTATIONS_STAGE`) car la colonne `open_price` du CSV Boursorama ne correspond pas à la colonne Oracle du même nom — le mapping explicite est réalisé dans un `INSERT SELECT` post-staging.
 
@@ -191,36 +191,42 @@ L'interface de sélection de source et de granularité utilise des **étiquettes
 
 ### DAGs Airflow
 
-| DAG | Schedule (UTC) | Description | Fin de DAG |
-|-----|---------------|-------------|------------|
-| `dag_conso_elec_tuya` | Quotidien 02h00 | Consommation Tuya SmartLife (4 granularités) | → trigger check |
-| `dag_calendaire` | Quotidien 04h30 | Jours fériés et vacances scolaires | — |
-| `dag_boursorama_valeurs` | Lundi 05h00 | Référentiel ISIN/secteur (si changement) | — |
-| `dag_conso_elec_enedis` | Quotidien 05h00 | Courbe de charge Enedis (Canal B + Canal C) | → trigger check |
-| `dag_meteo_station` | Quotidien 06h00 | Données station météo Bresser (2 canaux) | → trigger check |
-| `dag_oracle_load` | Quotidien 06h00 | Upload 10 CSV → bucket OCI | → trigger check |
-| `dag_boursorama_cotation` | Lun–Ven 06h00 | Cotations ETF Boursorama (5J + 10A) | → trigger check |
-| `dag_check_pipeline` | Cron 09h00 + triggers | Monitoring intégral de toute la chaîne (6 étapes) | — |
-| `dag_test_email` | Manuel uniquement | Test de connexion SMTP + envoi email de validation | — |
+| DAG | Schedule (CEST) | Fin de DAG |
+|-----|----------------|------------|
+| `dag_conso_elec_tuya` | Quotidien 01h05 | → trigger check |
+| `dag_conso_elec_enedis` | Quotidien 01h10 | → trigger check |
+| `dag_meteo_station` | Quotidien 01h15 | → trigger check |
+| `dag_calendaire` | Quotidien 01h15 | — |
+| `dag_boursorama_cotation` | Lun–Ven 01h05 | → trigger check |
+| `dag_boursorama_valeurs` | Lundi 01h35 | — |
+| `dag_oracle_load` | Quotidien 02h30 | → trigger check |
+| `dag_check_pipeline` | 05h15 + triggers | — |
+| `dag_test_email` | Manuel | — |
 
 ### Tables Oracle ADB
 
-| Table | Description | Granularité | Lignes (approx.) |
-|-------|-------------|-------------|-----------------|
-| `METEO_BRESSER` | Données météo station personnelle | 30 min | 26 000+ |
-| `ENEDIS_30MIN` | Consommation électrique réseau | 30 min | 63 000+ |
-| `ENEDIS_HORAIRE` | Agrégat horaire Enedis | Heure | 20 000+ |
-| `ENEDIS_JOURNALIER` | Agrégat journalier Enedis | Jour | 1 000+ |
-| `TUYA_15MIN` | Consommation appareils connectés | 15 min | — |
-| `TUYA_HORAIRE` | Consommation appareils connectés | Heure | — |
-| `TUYA_JOURNALIER` | Consommation appareils connectés | Jour | — |
-| `TUYA_MENSUEL` | Consommation appareils connectés | Mois | — |
-| `CALENDRIER` | Référentiel calendaire enrichi | Jour | 9 500+ |
-| `FINANCE_COTATIONS` | Cours ETF et valeurs mobilières | Séance | 473 000+ |
+| Table | Granularité | Lignes (approx.) |
+|-------|-------------|-----------------|
+| `METEO_BRESSER` | 30 min | 26 000+ |
+| `ENEDIS_30MIN` | 30 min | 63 000+ |
+| `ENEDIS_HORAIRE` | Heure | 20 000+ |
+| `ENEDIS_JOURNALIER` | Jour | 1 000+ |
+| `TUYA_15MIN` | 15 min | — |
+| `TUYA_HORAIRE` | Heure | — |
+| `TUYA_JOURNALIER` | Jour | — |
+| `TUYA_MENSUEL` | Mois | — |
+| `CALENDRIER` | Jour | 9 500+ |
+| `FINANCE_COTATIONS` | Séance | 473 000+ |
 
 ---
 
 ## Monitoring intégral
+
+### Synchronisation — chronologie nocturne
+
+![Chronologie pipeline DataOZ](pc_data/docs/monitoring/chronologie_pipeline.png)
+
+Le pipeline s'exécute entièrement la nuit, piloté par deux réveils PC planifiés (tâches Windows `WakeToRun=true`) qui assurent la disponibilité de Docker et d'Airflow au bon moment.
 
 ### Déclenchement automatique
 
