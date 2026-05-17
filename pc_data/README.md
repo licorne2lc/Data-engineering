@@ -191,32 +191,32 @@ L'interface de sélection de source et de granularité utilise des **étiquettes
 
 ### DAGs Airflow
 
-| DAG | Schedule (UTC) | Description | Fin de DAG |
-|-----|---------------|-------------|------------|
-| `dag_conso_elec_tuya` | Quotidien 02h00 | Consommation Tuya SmartLife (4 granularités) | → trigger check |
-| `dag_calendaire` | Quotidien 04h30 | Jours fériés et vacances scolaires | — |
-| `dag_boursorama_valeurs` | Lundi 05h00 | Référentiel ISIN/secteur (si changement) | — |
-| `dag_conso_elec_enedis` | Quotidien 05h00 | Courbe de charge Enedis (Canal B + Canal C) | → trigger check |
-| `dag_meteo_station` | Quotidien 06h00 | Données station météo Bresser (2 canaux) | → trigger check |
-| `dag_oracle_load` | Quotidien 06h00 | Upload 10 CSV → bucket OCI + vérification d'intégrité (lignes / colonnes / octets) | → trigger check |
-| `dag_boursorama_cotation` | Lun–Ven 06h00 | Cotations ETF Boursorama (5J + 10A) | → trigger check |
-| `dag_check_pipeline` | Cron 09h00 + triggers | Monitoring intégral de toute la chaîne (6 étapes) | — |
-| `dag_test_email` | Manuel uniquement | Test de connexion SMTP + envoi email de validation | — |
+| DAG | Schedule (CEST) | Fin de DAG |
+|-----|----------------|------------|
+| `dag_conso_elec_tuya` | Quotidien 01h05 | → trigger check |
+| `dag_conso_elec_enedis` | Quotidien 01h10 | → trigger check |
+| `dag_meteo_station` | Quotidien 01h15 | → trigger check |
+| `dag_calendaire` | Quotidien 01h15 | — |
+| `dag_boursorama_cotation` | Lun–Ven 01h05 | → trigger check |
+| `dag_boursorama_valeurs` | Lundi 01h35 | — |
+| `dag_oracle_load` | Quotidien 02h30 | → trigger check |
+| `dag_check_pipeline` | 05h15 + triggers | — |
+| `dag_test_email` | Manuel | — |
 
 ### Tables Oracle ADB
 
-| Table | Description | Granularité | Lignes (approx.) |
-|-------|-------------|-------------|-----------------|
-| `METEO_BRESSER` | Données météo station personnelle | 30 min | 26 000+ |
-| `ENEDIS_30MIN` | Consommation électrique réseau | 30 min | 63 000+ |
-| `ENEDIS_HORAIRE` | Agrégat horaire Enedis | Heure | 20 000+ |
-| `ENEDIS_JOURNALIER` | Agrégat journalier Enedis | Jour | 1 000+ |
-| `TUYA_15MIN` | Consommation appareils connectés | 15 min | — |
-| `TUYA_HORAIRE` | Consommation appareils connectés | Heure | — |
-| `TUYA_JOURNALIER` | Consommation appareils connectés | Jour | — |
-| `TUYA_MENSUEL` | Consommation appareils connectés | Mois | — |
-| `CALENDRIER` | Référentiel calendaire enrichi | Jour | 9 500+ |
-| `FINANCE_COTATIONS` | Cours ETF et valeurs mobilières | Séance | 473 000+ |
+| Table | Granularité | Lignes (approx.) |
+|-------|-------------|-----------------|
+| `METEO_BRESSER` | 30 min | 26 000+ |
+| `ENEDIS_30MIN` | 30 min | 63 000+ |
+| `ENEDIS_HORAIRE` | Heure | 20 000+ |
+| `ENEDIS_JOURNALIER` | Jour | 1 000+ |
+| `TUYA_15MIN` | 15 min | — |
+| `TUYA_HORAIRE` | Heure | — |
+| `TUYA_JOURNALIER` | Jour | — |
+| `TUYA_MENSUEL` | Mois | — |
+| `CALENDRIER` | Jour | 9 500+ |
+| `FINANCE_COTATIONS` | Séance | 473 000+ |
 
 ---
 
