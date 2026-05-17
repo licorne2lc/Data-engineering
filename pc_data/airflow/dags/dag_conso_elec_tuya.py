@@ -55,7 +55,9 @@ from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+# TriggerDagRunOperator retiré : dag_check_pipeline est désormais schedulé à 09:00 UTC
+# (après DBMS_SCHEDULER 07:30). Le déclencher ici (~01:10 UTC) provoquait des faux
+# positifs : Oracle n'était pas encore chargé → check_oracle signalait des données périmées.
 
 
 # ── PYTHONPATH : scripts Tuya ────────────────────────────────────────────────
@@ -589,11 +591,4 @@ with DAG(
     # Résumé final après toutes les synthèses + test DB
     [t_syn_m, t_syn_j, t_syn_h, t_syn_q, t_sql_test] >> t_summary
 
-    t_trigger = TriggerDagRunOperator(
-        task_id="trigger_check_pipeline",
-        trigger_dag_id="dag_check_pipeline",
-        wait_for_completion=False,
-        trigger_rule="all_done",
-    )
-
-    t_summary >> t_trigger
+    # t_trigger (trigger_check_pipeline) supprimé — dag_check_pipeline tourne à 09:00 UTC

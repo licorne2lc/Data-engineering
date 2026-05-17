@@ -80,7 +80,9 @@ from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+# TriggerDagRunOperator retiré : dag_check_pipeline est désormais schedulé à 09:00 UTC
+# (après DBMS_SCHEDULER 07:30). Le déclencher ici (~01:10 UTC) provoquait des faux
+# positifs : Oracle n'était pas encore chargé → check_oracle signalait des données périmées.
 
 # ── PYTHONPATH : scripts météo Bresser ───────────────────────────────────────
 _BRESSER_SCRIPTS = Path("/opt/airflow/scripts/meteo/bresser")
@@ -601,7 +603,7 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2026, 4, 15),
-    schedule_interval="0 1 * * *",   # Tous les jours à 01:00
+    schedule_interval="15 1 * * *",   # Tous les jours à 01:15
     catchup=False,
     tags=["bresser", "météo", "weathercloud", "usb", "dataoz"],
 ) as dag:
@@ -648,12 +650,7 @@ with DAG(
         execution_timeout=timedelta(minutes=5),
     )
 
-    t_trigger = TriggerDagRunOperator(
-        task_id="trigger_check_pipeline",
-        trigger_dag_id="dag_check_pipeline",
-        wait_for_completion=False,
-        trigger_rule="all_done",
-    )
+    # t_trigger (trigger_check_pipeline) supprimé — dag_check_pipeline tourne à 09:00 UTC
 
     # ── Dépendances ──────────────────────────────────────────────────────────
     # Pipeline A (Weathercloud) : téléchargement → transformation
@@ -662,5 +659,5 @@ with DAG(
     tB1 >> tB2
     # Load : fusion des deux pipelines (all_done = un seul suffit)
     [tA2, tB2] >> tL
-    # Résumé → déclenchement du check
-    tL >> tS >> t_trigger
+    # Résumé final
+    tL >> tS

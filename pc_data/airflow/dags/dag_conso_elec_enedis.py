@@ -953,7 +953,7 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2026, 4, 20),
-    schedule_interval="10 1 * * *",  # tous les jours à 01:10
+    schedule_interval="10 1 * * *",
     catchup=False,
     max_active_runs=1,
     tags=["enedis", "conso_elec", "dataoz"],
@@ -1001,4 +1001,99 @@ with DAG(
     #     execution_timeout=timedelta(minutes=5),
     # )
     #
- 
+    # t_api_verify = PythonOperator(
+    #     task_id="api_verify",
+    #     python_callable=task_api_verify,
+    #     trigger_rule="all_done",
+    #     execution_timeout=timedelta(minutes=2),
+    # )
+
+    # -- CANAL B : ETL inbox MANUEL (file-only) -------------------------------
+    t_extract = PythonOperator(
+        task_id="extract_inbox",
+        python_callable=task_extract_inbox,
+        execution_timeout=timedelta(minutes=10),
+    )
+
+    t_transform = PythonOperator(
+        task_id="transform_inbox",
+        python_callable=task_transform_inbox,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_load = PythonOperator(
+        task_id="load_inbox",
+        python_callable=task_load_inbox,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_summary = PythonOperator(
+        task_id="pipeline_summary",
+        python_callable=task_pipeline_summary,
+        trigger_rule="all_done",
+    )
+
+    # -- CANAL C : ETL scrapping Playwright (quotidien) -----------------------
+    t_scrap_dl = PythonOperator(
+        task_id="scrap_download",
+        python_callable=task_scrap_download,
+        execution_timeout=timedelta(minutes=15),
+    )
+
+    t_scrap_ext = PythonOperator(
+        task_id="scrap_extract",
+        python_callable=task_scrap_extract,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_scrap_trn = PythonOperator(
+        task_id="scrap_transform",
+        python_callable=task_scrap_transform,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_scrap_load = PythonOperator(
+        task_id="scrap_load",
+        python_callable=task_scrap_load,
+        trigger_rule="all_done",   # s'execute meme si load_inbox ou scrap_transform a echoue
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_agr_jour = PythonOperator(
+        task_id="agregation_journalier",
+        python_callable=task_agregation_journalier,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_agr_hor = PythonOperator(
+        task_id="agregation_horaire",
+        python_callable=task_agregation_horaire,
+        trigger_rule="all_done",
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    t_scrap_summary = PythonOperator(
+        task_id="scrap_summary",
+        python_callable=task_scrap_summary,
+        trigger_rule="all_done",
+    )
+
+    # ── Chaine Canal B ────────────────────────────────────────────────────────
+    # extract_inbox >> transform_inbox >> load_inbox >> pipeline_summary
+    t_extract >> t_transform >> t_load >> t_summary
+
+    # ── Chaine Canal C (telechargement, en parallele avec Canal B) ────────────
+    # scrap_download >> scrap_extract >> scrap_transform
+    t_scrap_dl >> t_scrap_ext >> t_scrap_trn
+
+    # ── Point de synchronisation : scrap_load attend load_inbox ET scrap_transform
+    # Garantit que le manuel passe avant le scrap (priorite Canal B sur Canal C).
+    [t_load, t_scrap_trn] >> t_scrap_load
+
+    # ── Post-load : agregations en parallele, puis resume Canal C ─────────────
+    t_scrap_load >> [t_agr_jour, t_agr_hor] >> t_scrap_summary

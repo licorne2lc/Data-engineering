@@ -118,7 +118,7 @@ with DAG(
     description="Pipeline quotidien : scraping Boursorama → PDFs → merge manifests",
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
-    schedule_interval="30 1 * * *",   # Tous les jours à 01:30 (Paris)
+    schedule_interval="30 1 * * *",   # Tous les jours à 07h00 (Paris)
     catchup=False,
     tags=["boursorama", "news", "dataoz"],
 ) as dag:
@@ -134,4 +134,9 @@ with DAG(
     )
 
     t3 = PythonOperator(
-        task_id="p
+        task_id="pipeline_summary",
+        python_callable=log_pipeline_summary,
+    )
+
+    # Ordre : scraping → merge → résumé
+    t1 >> t2 >> t3

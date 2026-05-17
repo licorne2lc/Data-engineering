@@ -63,14 +63,14 @@ COLLECTION_DAGS = {
 # max_age_h : âge maximal acceptable du fichier (en heures)
 CSV_FILES = {
     "Météo Bresser":         {"path": f"{BASE_CURATED}/météo/bresser/common_weather_database.csv",                  "max_age_h": 26},   # quotidien matin — check valide toute la journée
-    "Enedis 30 min":         {"path": f"{BASE_CURATED}/conso_elec/enedis/Database_Enedis_30_min.csv",               "max_age_h": 28},
+    "Enedis 30 min":         {"path": f"{BASE_CURATED}/conso_elec/enedis/Database_Enedis_30_min.csv",               "max_age_h": 36},   # aligné sur COLLECTION_DAGS (dag à 01:10 UTC, check à 09:00 UTC = 32h si un run manqué)
     "Enedis journalier":     {"path": f"{BASE_CURATED}/conso_elec/enedis/database_enedis_journalier.csv",           "max_age_h": 336},   # manuel → 14 j
     "Tuya 15 min":           {"path": f"{BASE_CURATED}/conso_elec/tuya/_SYNTHESE_15MIN.csv",                        "max_age_h": 28},
     "Tuya horaire":          {"path": f"{BASE_CURATED}/conso_elec/tuya/_SYNTHESE_HORAIRE.csv",                      "max_age_h": 28},
     "Tuya journalier":       {"path": f"{BASE_CURATED}/conso_elec/tuya/_SYNTHESE_JOURNALIERE.csv",                  "max_age_h": 36},   # quotidien + marge
     "Tuya mensuel":          {"path": f"{BASE_CURATED}/conso_elec/tuya/_SYNTHESE_MENSUELLE.csv",                    "max_age_h": 720},
     "Calendrier":            {"path": f"{BASE_CURATED}/calendaire/socle_calendrier.csv",                            "max_age_h": 720},
-    "Enedis horaire":        {"path": f"{BASE_CURATED}/conso_elec/enedis/database_enedis_horaire.csv",             "max_age_h": 28},
+    "Enedis horaire":        {"path": f"{BASE_CURATED}/conso_elec/enedis/database_enedis_horaire.csv",             "max_age_h": 36},   # aligné sur COLLECTION_DAGS
     "Finance cotations":     {"path": "/opt/airflow/data/raw/finance/cotations/boursorama_cotations.csv",         "max_age_h": 120},  # quotidien (jours ouvrés) — enriched cassé depuis mars, check sur le raw
     # "Finance enriched":    {"path": f"{BASE_CURATED}/finance/valeurs/boursorama_cotations_enriched.csv",        "max_age_h": 120},  # TODO: réactiver quand update_master est corrigé
 }
@@ -112,15 +112,35 @@ def _ok(msg):  print(f"  ✅  {msg}")
 def _warn(msg): print(f"  ⚠️  {msg}")
 def _ko(msg):  print(f"  ❌  {msg}")
 
-def _get_oracle_conn():
-    return oracledb.connect(
-        user=ORACLE_USER,
-        password=ORACLE_PASS,
-        dsn=ORACLE_DSN,
-        config_dir=WALLET_DIR,
-        wallet_location=WALLET_DIR,
-        wallet_password=WALLET_PASS,
-    )
+def _get_oracle_conn(max_attempts: int = 8, wait_s: int = 45):
+    """
+    Tente de se connecter à Oracle avec retry.
+    Utile quand l'Autonomous Database (Always Free) sort d'auto-suspend.
+    Le redémarrage ADB prend 1 à 5 minutes — 8 tentatives x 45s = 6 min max.
+    """
+    last_err = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            conn = oracledb.connect(
+                user=ORACLE_USER,
+                password=ORACLE_PASS,
+                dsn=ORACLE_DSN,
+                config_dir=WALLET_DIR,
+                wallet_location=WALLET_DIR,
+                wallet_password=WALLET_PASS,
+            )
+            if attempt > 1:
+                print(f"  ✅  Oracle connecté après {attempt} tentative(s).")
+            return conn
+        except Exception as e:
+            last_err = e
+            if attempt < max_attempts:
+                print(f"  ⚠️  Oracle connexion échouée (tentative {attempt}/{max_attempts}) : {e}")
+                print(f"      Nouvelle tentative dans {wait_s}s (ADB en cours de wake-up ?)…")
+                time.sleep(wait_s)
+            else:
+                print(f"  ❌  Oracle inaccessible après {max_attempts} tentatives : {e}")
+    raise last_err
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ÉTAPE 1 — DAGs de collecte
@@ -466,23 +486,22 @@ def pipeline_summary(**kwargs):
         icon = "✅" if result == "OK" else "❌"
         if result != "OK":
             all_ok = False
-        print(f"  {icon}  {label} → {result or 'ÉCHEC'}")
+        print(f"  {icon}  {label} → {result or 'ECHEC'}")
 
     print("=" * 60)
     if all_ok:
-        print("  🎉  PIPELINE 100% OPÉRATIONNEL")
+        print("  PIPELINE 100% OPERATIONNEL")
     else:
-        print("  🚨  DES ANOMALIES ONT ÉTÉ DÉTECTÉES — voir logs ci-dessus")
+        print("  DES ANOMALIES ONT ETE DETECTEES -- voir logs ci-dessus")
     print("=" * 60)
 
-    # ── Alerte email si au moins une étape en erreur ──────────────────
     if not all_ok:
         rows_html = ""
         for label, result in steps.items():
             ok      = result == "OK"
             couleur = "#d4edda" if ok else "#f8d7da"
             icone   = "✅" if ok else "❌"
-            statut  = result or "ÉCHEC"
+            statut  = result or "ECHEC"
             rows_html += (
                 f'<tr style="background:{couleur};">'
                 f'<td style="padding:8px 12px;">{icone} {label}</td>'
@@ -492,56 +511,61 @@ def pipeline_summary(**kwargs):
 
         html_body = f"""
         <html><body style="font-family:Arial,sans-serif;color:#333;">
-          <h2 style="color:#c0392b;">🚨 DataOZ — Anomalie pipeline détectée</h2>
+          <h2 style="color:#c0392b;">DataOZ -- Anomalie pipeline détectée</h2>
           <p><strong>Date :</strong> {now} UTC</p>
           <table border="0" cellspacing="0" cellpadding="0"
                  style="border-collapse:collapse;width:100%;max-width:600px;">
             <thead>
               <tr style="background:#343a40;color:#fff;">
-                <th style="padding:10px 12px;text-align:left;">Étape</th>
+                <th style="padding:10px 12px;text-align:left;">Etape</th>
                 <th style="padding:10px 12px;text-align:left;">Statut</th>
               </tr>
             </thead>
             <tbody>{rows_html}</tbody>
           </table>
           <p style="margin-top:16px;">
-            👉 <a href="http://localhost:8080/dags/dag_check_pipeline/grid">
-            Voir les logs dans Airflow</a>
+            Voir les logs dans Airflow : http://localhost:8080/dags/dag_check_pipeline/grid
           </p>
           <hr style="margin-top:24px;">
-          <small style="color:#888;">DataOZ Monitoring — dag_check_pipeline</small>
+          <small style="color:#888;">DataOZ Monitoring -- dag_check_pipeline</small>
         </body></html>
         """
 
         nb_erreurs = sum(1 for v in steps.values() if v != "OK")
-        subject    = f"🚨 DataOZ Pipeline — {nb_erreurs} anomalie(s) détectée(s) [{now[:10]}]"
+        subject    = f"DataOZ Pipeline -- {nb_erreurs} anomalie(s) détectée(s) [{now[:10]}]"
 
         try:
             send_email(to=ALERT_EMAIL, subject=subject, html_content=html_body)
-            print(f"  📧  Alerte email envoyée → {ALERT_EMAIL}", flush=True)
+            print(f"  Alerte email envoyée --> {ALERT_EMAIL}", flush=True)
         except Exception as e:
-            print(f"  ⚠️  Impossible d'envoyer l'email d'alerte : {e}", flush=True)
+            print(f"  Impossible d'envoyer l'email d'alerte : {e}", flush=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ============================================================
 # DAG DEFINITION
-# ══════════════════════════════════════════════════════════════════════════════
+# ============================================================
+# Planning (heure Paris / CEST) :
+#   02:30  dag_oracle_load    uploade les CSV vers le bucket OCI
+#   04:00  DBMS_SCHEDULER Oracle charge les tables depuis OCI (02:00 UTC)
+#   05:15  dag_check_pipeline verifie que tout est OK
+#   10:45  Tache Windows reveille le PC si en veille (filet securite)
+# ============================================================
 
 default_args = {
     "owner":            "dataoz",
     "depends_on_past":  False,
-    "retries":          0,
+    "retries":          1,                        # 1 retry Airflow au niveau tâche (filet de sécurité)
+    "retry_delay":      timedelta(minutes=5),     # attendre 5 min avant retry (ADB wake-up ~1-3 min)
     "email_on_failure": False,
 }
 
 with DAG(
     dag_id="dag_check_pipeline",
-    description="Vérification intégrale de la chaîne DataOZ (6 étapes)",
-    schedule_interval="0 5 * * *",    # tous les jours à 05:00 UTC (après fenêtre collecte 01h-02h)
-                                      # déclenchement principal : TriggerDagRunOperator dans chaque DAG source
+    description="Verification integrale de la chaine DataOZ (6 etapes)",
+    schedule_interval="15 5 * * *",    # tous les jours a 05:15 CEST (apres DBMS_SCHEDULER 04:00 CEST / 02:00 UTC)
     start_date=datetime(2026, 1, 1),
     catchup=False,
-    max_active_runs=1,                # évite les runs simultanés si plusieurs DAGs triggèrent en même temps
+    max_active_runs=1,
     default_args=default_args,
     tags=["dataoz", "monitoring", "check"],
 ) as dag:
@@ -556,8 +580,7 @@ with DAG(
     t_summary = PythonOperator(
         task_id="pipeline_summary",
         python_callable=pipeline_summary,
-        trigger_rule=TriggerRule.ALL_DONE,   # s'exécute même si des tâches échouent
+        trigger_rule=TriggerRule.ALL_DONE,
     )
 
-    # Exécution parallèle des 6 checks → résumé final
     [t1, t2, t3, t4, t5, t6] >> t_summary

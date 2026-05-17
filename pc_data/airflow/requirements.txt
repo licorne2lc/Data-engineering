@@ -1,0 +1,2 @@
+# Dépendances Python pour les DAGs Airflow
+apache-airflow==2.8.0

@@ -212,7 +212,7 @@ with DAG(
     description="Pipeline quotidien : scraping cotations Boursorama → 5J intraday + 10A OHLC",
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
-    schedule_interval="20 1 * * 1-5",  # Lundi–Vendredi à 01:20 (Paris)
+    schedule_interval="5 1 * * 1-5",  # Lundi–Vendredi à 01h05 (Paris)
     catchup=False,
     tags=["boursorama", "cotation", "dataoz"],
 ) as dag:
@@ -225,4 +225,13 @@ with DAG(
 
     t2 = PythonOperator(
         task_id="update_history",
-        python_ca
+        python_callable=run_update_history,
+        execution_timeout=timedelta(hours=3),  # Playwright sur ~200 symboles
+    )
+
+    t3 = PythonOperator(
+        task_id="pipeline_summary",
+        python_callable=log_pipeline_summary,
+    )
+
+    t1 >> t2 >> t3

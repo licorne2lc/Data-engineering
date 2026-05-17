@@ -18,6 +18,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 30
+    AIRFLOW__SCHEDULER__DAG_FILE_PROCESSOR_TIMEOUT: 120
     # ── Racine finance ──
     DATAOZ_FINANCE_ROOT: /opt/airflow/data/curated/finance
     # ── Référentiel valeurs (dag_boursorama_valeurs) ──
@@ -172,4 +173,27 @@ services:
   # ── Récepteur Bresser (serveur HTTP permanent) ──────────────────
   bresser-receiver:
     build:
-      contex
+      context: .
+      dockerfile: Dockerfile.bresser
+    image: dataoz_bresser_receiver:latest
+    container_name: dataoz_bresser_receiver
+    environment:
+      BRESSER_DATA_DIR: /data/curated/météo/bresser
+      BRESSER_PORT: "8765"
+    volumes:
+      - D:/projet_dataoz/pc_data/data:/data
+      - D:/projet_dataoz/pc_data/scripts/meteo/bresser:/app
+    ports:
+      - "8765:8765"
+    working_dir: /app
+    command: python bresser_receiver.py
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8765/status"]
+      interval: 30s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: dataoz_postgres_data

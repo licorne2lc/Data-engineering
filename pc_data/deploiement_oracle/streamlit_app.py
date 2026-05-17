@@ -16,6 +16,7 @@ Variables d'environnement (optionnelles — valeurs par défaut ci-dessous) :
 """
 
 import os
+import time
 import oracledb
 import streamlit as st
 import pandas as pd
@@ -255,27 +256,47 @@ def load_finance_referentiel() -> pd.DataFrame:
 
 # ── Connexion Oracle ───────────────────────────────────────────────────────────
 @st.cache_resource
-def get_connection():
-    return oracledb.connect(
+def get_pool():
+    """Crée un pool de connexions Oracle (une seule fois par session Streamlit).
+
+    Le pool gère automatiquement la santé des connexions (ping_interval) et
+    évite le DPY-4011 au démarrage : contrairement à une connexion unique mise
+    en cache, chaque acquire() retourne une connexion garantie vivante.
+    """
+    return oracledb.create_pool(
         user=ORA_USER,
         password=ORA_PASS,
         dsn=ORA_DSN,
         config_dir=WALLET_DIR,
         wallet_location=WALLET_DIR,
         wallet_password=WALLET_PASS,
+        min=1,
+        max=3,
+        increment=1,
+        ping_interval=60,   # Oracle vérifie la vie des connexions toutes les 60s
     )
 
 def run_query(sql: str) -> pd.DataFrame:
-    try:
-        conn = get_connection()
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            cols = [d[0].lower() for d in cur.description]
-            rows = cur.fetchmany(10_000)
-            return pd.DataFrame(rows, columns=cols)
-    except Exception as e:
-        st.cache_resource.clear()
-        raise e
+    """Exécute une requête SQL Oracle.
+
+    En cas de DPY-4011 (connexion fermée par Oracle après inactivité), le pool
+    est recréé et la requête est retentée jusqu'à 3 fois avec un délai croissant.
+    """
+    for attempt in range(3):
+        try:
+            pool = get_pool()
+            with pool.acquire() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+                    cols = [d[0].lower() for d in cur.description]
+                    rows = cur.fetchmany(10_000)
+                    return pd.DataFrame(rows, columns=cols)
+        except oracledb.DatabaseError:
+            if attempt == 2:
+                raise
+            # Pool périmé → on le recrée et on retente
+            st.cache_resource.clear()
+            time.sleep(1 * (attempt + 1))
 
 # ── Générateur SQL Oracle ──────────────────────────────────────────────────────
 def build_sql(

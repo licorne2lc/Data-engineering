@@ -1,0 +1,14 @@
+# Dockerfile.bresser
+# Image ultra-légère pour le serveur récepteur Bresser
+# N'utilise que la stdlib Python (http.server, csv, threading, urllib)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# curl pour le healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pc_data/scripts/meteo/bresser/bresser_receiver.py /app/
+
+CMD ["python", "bresser_receiver.py"]

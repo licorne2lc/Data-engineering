@@ -296,14 +296,56 @@ def task_enrichir_jours_feries(**context):
         raise
 
 
+def task_dedup_calendrier(**context):
+    """
+    Phase 5 (filet de sécurité) -- Dédoublonne calendrier.csv sur la colonne
+    'Date' après les enrichissements.
+
+    Si les scripts d'enrichissement produisent des doublons (p.ex. suite à un
+    chevauchement de périodes dans les sources open data), cette tâche les
+    supprime avant que le fichier ne soit uploadé dans le bucket OCI.
+    Sans cette étape, DBMS_CLOUD.COPY_DATA échoue sur la contrainte unique
+    UQ_CALENDRIER_DATE en Oracle.
+    """
+    import pandas as pd
+
+    try:
+        df = pd.read_csv(CALENDRIER_CSV, sep=";")
+        n_avant = len(df)
+        df_clean = df.drop_duplicates(subset=["Date"], keep="first")
+        n_apres = len(df_clean)
+        n_suppr = n_avant - n_apres
+
+        if n_suppr > 0:
+            df_clean.to_csv(CALENDRIER_CSV, sep=";", index=False)
+            print(f"[dedup_calendrier] {n_suppr} doublon(s) supprimé(s) "
+                  f"({n_avant} → {n_apres} lignes). Fichier mis à jour.", flush=True)
+        else:
+            print(f"[dedup_calendrier] Aucun doublon détecté "
+                  f"({n_avant} lignes). Fichier inchangé.", flush=True)
+
+        return {
+            "status":  "ok",
+            "n_avant": n_avant,
+            "n_apres": n_apres,
+            "n_suppr": n_suppr,
+            "output":  str(CALENDRIER_CSV),
+        }
+
+    except Exception as e:
+        print(f"[ERROR] dedup_calendrier -> {e}", flush=True)
+        raise
+
+
 def task_pipeline_summary(**context):
-    """Résumé des phases (étapes 1→4)."""
+    """Résumé des phases (étapes 1→5)."""
     ti       = context["ti"]
     socle    = ti.xcom_pull(task_ids="generate_socle")        or {}
     vac_dl   = ti.xcom_pull(task_ids="download_vacances")     or {}
     jf_dl    = ti.xcom_pull(task_ids="download_jours_feries") or {}
     enrich   = ti.xcom_pull(task_ids="enrichir_vacances")     or {}
     enrich_f = ti.xcom_pull(task_ids="enrichir_jours_feries") or {}
+    dedup    = ti.xcom_pull(task_ids="dedup_calendrier")      or {}
 
     print("=" * 70, flush=True)
     print("DAG CALENDAIRE -- ÉTAPES 1→4 -- RÉSUMÉ", flush=True)
@@ -380,6 +422,18 @@ def task_pipeline_summary(**context):
         print(f"   Statut        : {f_status}", flush=True)
     print("", flush=True)
 
+    # -- Déduplication --------------------------------------------------------
+    print("   -- 5. DÉDUPLICATION --", flush=True)
+    d_status = dedup.get("status", "?")
+    if d_status == "ok":
+        print(f"   Avant  : {dedup.get('n_avant', '?')} lignes", flush=True)
+        print(f"   Après  : {dedup.get('n_apres', '?')} lignes", flush=True)
+        print(f"   Supprimés : {dedup.get('n_suppr', '?')} doublon(s)", flush=True)
+        print(f"   Sortie : {dedup.get('output', '?')}", flush=True)
+    else:
+        print(f"   Statut : {d_status}", flush=True)
+    print("", flush=True)
+
     print(f"   RAW       : {RAW_DIR}", flush=True)
     print(f"   CURATED   : {CURATED_DIR}", flush=True)
     print(f"   DATABASE  : {CALENDRIER_CSV}", flush=True)
@@ -440,6 +494,13 @@ with DAG(
         execution_timeout=timedelta(minutes=2),
     )
 
+    # -- ÉTAPE 5 : déduplication (filet de sécurité) ---------------------------
+    t_dedup = PythonOperator(
+        task_id="dedup_calendrier",
+        python_callable=task_dedup_calendrier,
+        execution_timeout=timedelta(minutes=1),
+    )
+
     t_summary = PythonOperator(
         task_id="pipeline_summary",
         python_callable=task_pipeline_summary,
@@ -450,12 +511,16 @@ with DAG(
     #
     #  generate_socle ──────────┐
     #                           ├──> enrichir_vacances ──┐
-    #  download_vacances ───────┘                        ├──> enrichir_jours_feries ──┐
-    #                                                    │                            │
-    #  download_jours_feries ────────────────────────────┘                            │
-    #                                                                                 ▼
-    #                                                                       pipeline_summary
+    #  download_vacances ───────┘                        ├──> enrichir_jours_feries ──> dedup_calendrier ──┐
+    #                                                    │                                                 │
+    #  download_jours_feries ────────────────────────────┘                                                 ▼
+    #                                                                                           pipeline_summary
     #
     #  Cascade d'enrichissement :
     #    enrichir_vacances     consomme SOCLE_CSV + VACANCES_CSV     -> calendrier.csv
-    #    enrichir_jours_feries consomme calendrier.csv + JOURS_FER
+    #    enrichir_jours_feries consomme calendrier.csv + JOURS_FERIES_CSV -> calendrier.csv
+    #    dedup_calendrier      supprime les doublons sur Date          -> calendrier.csv (final)
+
+    [t_socle, t_vacances] >> t_enrich_vac
+    [t_enrich_vac, t_jours_feries] >> t_enrich_feries
+    t_enrich_feries >> t_dedup >> t_summary

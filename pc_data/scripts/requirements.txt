@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────
+# Dépendances Python — Scripts DataOZ
+# À placer dans : D:\projet_dataoz\pc_data\scripts\requirements.txt
+# Installé automatiquement au démarrage des containers Airflow
+# ─────────────────────────────────────────────
+
+# Scraping web
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Scraping dynamique (téléchargement graphiques Boursorama)
+# Note : le binaire Chromium est installé dans le Dockerfile (playwright install chromium)
+playwright==1.43.0
+
+# Traitement des données
+pandas>=2.0.0
+
+# Génération PDF
+# reportlab>=4.0.0 utilise md5(usedforsecurity=False) — incompatible Python 3.8
+# Migration vers Python 3.11 (Dockerfile) → toute version récente est utilisable
+reportlab>=4.0.0
+
+# Utilitaires (déjà présents dans Airflow mais listés pour clarté)
+python-dateutil>=2.8.0
+
+# ── Consommation électrique / Tuya — DB granularités fines ──
+# Loader Postgres : scripts/conso_elec/tuya/load/{db.py,load_tuya.py}
+psycopg2-binary>=2.9.9
+
+# ── Lecture des exports XLSX Enedis (inbox_enedis.py) ──
+openpyxl>=3.1.0
+
+# ── Oracle Autonomous Database (dag_oracle_load) ──
+# Connexion via wallet mTLS vers dataozdb (Always Free)
+oracledb>=2.0.0
+
+# ── OCI SDK (upload CSV vers Oracle Object Storage — dag_oracle_load) ──
+oci>=2.120.0
