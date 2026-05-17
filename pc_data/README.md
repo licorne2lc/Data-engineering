@@ -157,7 +157,7 @@ dag_calendaire          → socle_calendrier.csv
 
 ### Étape 3 — ETL Oracle (cloud, automatique)
 
-`DBMS_SCHEDULER` déclenche les jobs à 07h30 UTC. Chaque job appelle `DBMS_CLOUD.COPY_DATA` pour charger le fichier CSV depuis le bucket dans la table Oracle correspondante (TRUNCATE + reload).
+`DBMS_SCHEDULER` déclenche les jobs à **02h00 UTC (04h00 CEST)**. Chaque job appelle `DBMS_CLOUD.COPY_DATA` pour charger le fichier CSV depuis le bucket dans la table Oracle correspondante (TRUNCATE + reload).
 
 Pour `FINANCE_COTATIONS`, le chargement passe par une table de staging (`FINANCE_COTATIONS_STAGE`) car la colonne `open_price` du CSV Boursorama ne correspond pas à la colonne Oracle du même nom — le mapping explicite est réalisé dans un `INSERT SELECT` post-staging.
 
